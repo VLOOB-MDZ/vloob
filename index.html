@@ -1,0 +1,2570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VLOOB — Visual Studio</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+  <style>
+  /* ═══════════════════════════════════════════
+     TOKENS
+  ═══════════════════════════════════════════ */
+  :root {
+    --bg:        #F7F4EF;
+    --ink:       #0A0A0A;
+    --ink-mid:   #2C2C2C;
+    --ink-wash:  #4A4A4A;
+    --ink-light: #8A8A8A;
+    --gold:      #B8956A;
+    --gold-dim:  rgba(184,149,106,0.35);
+    --ease:      cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* ═══════════════════════════════════════════
+     RESET + BASE
+  ═══════════════════════════════════════════ */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html { overflow-x: hidden; scroll-behavior: auto; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    overflow-x: hidden;
+    cursor: none;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--ink); color: var(--bg); }
+  img { display: block; max-width: 100%; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ═══════════════════════════════════════════
+     FILM GRAIN
+  ═══════════════════════════════════════════ */
+  #grain {
+    position: fixed; inset: 0; z-index: 9000;
+    pointer-events: none;
+    opacity: 0.042;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+    animation: grainDrift 0.08s steps(1) infinite;
+  }
+  @keyframes grainDrift {
+    0%  { background-position:  0px   0px; }
+    20% { background-position: -47px  31px; }
+    40% { background-position:  23px -58px; }
+    60% { background-position: -71px  14px; }
+    80% { background-position:  39px  67px; }
+  }
+
+  /* ═══════════════════════════════════════════
+     CURSOR + TRAIL
+  ═══════════════════════════════════════════ */
+  .cursor {
+    position: fixed; top: 0; left: 0;
+    width: 7px; height: 7px;
+    background: #fff;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    mix-blend-mode: difference;
+    transform: translate(-50%, -50%);
+    will-change: transform;
+    transition: width 220ms var(--ease), height 220ms var(--ease), border-radius 220ms var(--ease);
+  }
+  .cursor.hover { width: 44px; height: 44px; }
+  .cursor.down  { width: 66px; height: 66px; transition-duration: 60ms; }
+  .cursor.text  { width: 2px; height: 30px; border-radius: 1px; }
+  .cursor.view  { width: 72px; height: 72px; background: transparent; border: 1px solid #fff; mix-blend-mode: normal; }
+  .cursor-label {
+    position: fixed; top: 0; left: 0; z-index: 10000;
+    pointer-events: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--bg); mix-blend-mode: normal;
+    opacity: 0; white-space: nowrap;
+    transform: translate(-50%, -50%);
+    transition: opacity 200ms;
+  }
+  .cursor-label.show { opacity: 1; }
+
+  #trail-canvas {
+    position: fixed; inset: 0; z-index: 8999;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+
+  /* ═══════════════════════════════════════════
+     SCROLL PROGRESS
+  ═══════════════════════════════════════════ */
+  .scroll-bar {
+    position: fixed; left: 28px; top: 0;
+    width: 1px; height: 0%;
+    background: var(--ink); z-index: 500;
+    transform-origin: top;
+  }
+  .scroll-bar::after {
+    content: '';
+    position: absolute; bottom: -5px; left: -3.5px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--gold);
+  }
+
+  /* ═══════════════════════════════════════════
+     BRAND + NAV DOTS
+  ═══════════════════════════════════════════ */
+  .brand {
+    position: fixed; top: 32px; left: 6%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 400;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    color: #fff; z-index: 500; opacity: 0;
+    mix-blend-mode: difference;
+  }
+
+  .nav-dots {
+    position: fixed; right: 30px; top: 50%;
+    transform: translateY(-50%);
+    z-index: 500; display: flex;
+    flex-direction: column; gap: 14px;
+    opacity: 0;
+  }
+  .nav-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ink-light); cursor: pointer;
+    transition: background 0.3s, transform 0.3s, height 0.3s;
+  }
+  .nav-dot.active { background: var(--ink); transform: scaleY(2.4); border-radius: 2px; }
+
+  /* ═══════════════════════════════════════════
+     TYPOGRAPHY UTILS
+  ═══════════════════════════════════════════ */
+  .mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 400;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-light);
+  }
+  .mono-gold { color: var(--gold); }
+
+  /* ═══════════════════════════════════════════
+     INTRO CURTAIN
+  ═══════════════════════════════════════════ */
+  #curtain {
+    position: fixed; inset: 0; z-index: 9998;
+    background: var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 20px;
+  }
+  .curtain-kanji {
+    font-size: clamp(80px, 12vw, 140px);
+    color: var(--bg); line-height: 1;
+    opacity: 0; transform: scale(0.85);
+  }
+  .curtain-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.28em;
+    text-transform: uppercase; color: rgba(247,244,239,0.3);
+    opacity: 0;
+  }
+
+  /* ═══════════════════════════════════════════
+     SECTION 1 — HERO
+  ═══════════════════════════════════════════ */
+  #hero {
+    position: relative; width: 100%;
+    min-height: 100vh; display: flex;
+    align-items: center; overflow: visible;
+  }
+
+  /* Kanji watermark */
+  .kanji-mark {
+    position: absolute;
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(260px, 34vw, 480px);
+    color: rgba(10,10,10,0.022);
+    line-height: 1; pointer-events: none;
+    user-select: none; z-index: 1;
+    right: 2%; top: 8%;
+    letter-spacing: -0.02em;
+  }
+
+  #hero-svg {
+    position: absolute;
+    top: -100px; right: -80px;
+    width: min(740px, 68vw);
+    height: min(720px, 78vh);
+    z-index: 2; overflow: visible;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .hero-content {
+    position: relative; z-index: 10;
+    padding: 0 0 0 8%;
+    max-width: 620px;
+  }
+  .hero-eyebrow {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 36px; opacity: 0; transform: translateY(12px);
+  }
+  .hero-eyebrow-line {
+    width: 32px; height: 1px; background: var(--gold);
+  }
+  .hero-headline {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(64px, 7.8vw, 116px);
+    font-weight: 400; line-height: 0.93;
+    letter-spacing: -0.03em; color: var(--ink);
+  }
+  .hero-headline em { font-style: italic; color: var(--ink-wash); }
+  .hero-line { display: block; overflow: hidden; padding-bottom: 0.06em; }
+  .hero-line-inner { display: block; transform: translateY(112%); }
+
+  .hero-sub {
+    margin-top: 40px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--ink-light);
+    opacity: 0;
+  }
+
+  /* Scroll indicator */
+  .scroll-ind {
+    position: absolute; bottom: 44px; left: 8%;
+    display: flex; align-items: center; gap: 14px;
+    z-index: 10; opacity: 0;
+  }
+  .scroll-ind-line {
+    width: 56px; height: 1px;
+    background: linear-gradient(to right, var(--ink), transparent);
+    position: relative; overflow: visible;
+  }
+  .scroll-ind-dot {
+    position: absolute; left: -2px; top: -3px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--gold);
+    animation: indDrip 2.2s var(--ease) infinite;
+  }
+  @keyframes indDrip {
+    0%   { left: -2px;  opacity: 1; }
+    75%  { left: 54px;  opacity: 0.6; }
+    100% { left: 54px;  opacity: 0; }
+  }
+
+  /* SVG drip trails (scroll-driven) */
+  .drip-path { stroke-dashoffset: 300; }
+
+  /* ═══════════════════════════════════════════
+     MARQUEE BAND
+  ═══════════════════════════════════════════ */
+  #marquee {
+    position: relative; z-index: 5;
+    background: var(--ink);
+    padding: 26px 0 24px;
+    overflow: hidden;
+  }
+  /* Ink drip bridge from hero bottom */
+  #marquee::before {
+    content: '';
+    position: absolute;
+    top: -28px; left: 50%; transform: translateX(-50%);
+    width: 60%; height: 60px;
+    background: radial-gradient(ellipse at 50% 100%, var(--ink) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+  }
+  .marquee-row { overflow: hidden; }
+  .marquee-row + .marquee-row {
+    border-top: 1px solid rgba(247,244,239,0.07);
+    margin-top: 12px; padding-top: 12px;
+  }
+  .marquee-track {
+    display: flex; width: max-content;
+    animation: mLeft 26s linear infinite;
+  }
+  .marquee-track.rev { animation: mRight 21s linear infinite; }
+  .marquee-item {
+    font-family: 'DM Serif Display', serif;
+    font-style: italic;
+    font-size: 22px;
+    color: rgba(247,244,239,0.45);
+    white-space: nowrap; padding: 0 40px;
+    letter-spacing: 0.01em;
+  }
+  .marquee-item.em { color: var(--gold); font-style: normal; font-size: 13px; letter-spacing: 0.18em; }
+  .marquee-track.rev .marquee-item { color: rgba(247,244,239,0.2); font-size: 13px; letter-spacing: 0.14em; font-style: normal; font-family: 'JetBrains Mono', monospace; }
+  @keyframes mLeft  { from { transform: translateX(0);    } to { transform: translateX(-50%); } }
+  @keyframes mRight { from { transform: translateX(-50%); } to { transform: translateX(0);    } }
+
+  /* ═══════════════════════════════════════════
+     SECTION 2 — MANIFESTO
+  ═══════════════════════════════════════════ */
+  #manifesto {
+    position: relative; min-height: 100vh;
+    display: flex; align-items: center;
+    overflow: visible;
+  }
+  #mani-svg {
+    position: absolute; left: -100px; top: 0;
+    width: min(580px, 50vw); height: 100%;
+    z-index: 2; pointer-events: none;
+    opacity: 0; transform: translateX(-80px);
+  }
+  /* Faint editorial photo watermark behind text */
+  .mani-photo {
+    position: absolute; right: 0; bottom: 0;
+    width: 42%; height: 85%;
+    object-fit: cover; opacity: 0.055;
+    mix-blend-mode: multiply;
+    filter: contrast(1.4) grayscale(1);
+    pointer-events: none;
+  }
+  .manifesto-content {
+    position: relative; z-index: 10;
+    margin-left: auto; width: 54%; padding-right: 8%;
+  }
+  .mani-eyebrow { margin-bottom: 32px; opacity: 0; transform: translateY(10px); }
+  .mani-divider {
+    width: 0; height: 1px; background: var(--gold);
+    margin: 28px 0; opacity: 0;
+  }
+  .manifesto-quote {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(34px, 3.8vw, 56px);
+    font-style: italic; font-weight: 400;
+    line-height: 1.24; letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .q-word { display: inline-block; opacity: 0; transform: translateY(18px); }
+  .manifesto-body {
+    margin-top: 36px;
+    font-size: 18px; line-height: 1.82;
+    color: var(--ink-wash); max-width: 400px;
+    opacity: 0; transform: translateY(14px);
+  }
+
+  /* ═══════════════════════════════════════════
+     STATS STRIP
+  ═══════════════════════════════════════════ */
+  #stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    padding: 64px 8%; gap: 0;
+    border-top: 1px solid rgba(10,10,10,0.08);
+    border-bottom: 1px solid rgba(10,10,10,0.08);
+    background: var(--bg);
+  }
+  .stat-col {
+    padding: 0 32px;
+    border-right: 1px solid rgba(10,10,10,0.08);
+    opacity: 0; transform: translateY(24px);
+  }
+  .stat-col:first-child { padding-left: 0; }
+  .stat-col:last-child  { border-right: none; }
+  .stat-num-wrap {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(52px, 5.5vw, 80px);
+    font-weight: 400; line-height: 1;
+    color: var(--ink); letter-spacing: -0.03em;
+    display: flex; align-items: baseline; gap: 2px;
+  }
+  .stat-suffix {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; color: var(--gold);
+  }
+  .stat-label {
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-light);
+  }
+
+  /* ═══════════════════════════════════════════
+     SECTION 3 — VIDEO REEL
+  ═══════════════════════════════════════════ */
+  #reel {
+    padding: 100px 8% 120px;
+    position: relative; overflow: hidden;
+  }
+  .reel-header {
+    display: flex; align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    opacity: 0; transform: translateY(20px);
+  }
+  .reel-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(36px, 4vw, 56px);
+    font-style: italic; letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .reel-frame {
+    position: relative; width: 100%;
+    aspect-ratio: 16/9;
+    background: var(--ink);
+    overflow: hidden;
+    opacity: 0; transform: translateY(32px);
+  }
+  .reel-video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0.72;
+    filter: grayscale(0.25) contrast(1.12);
+  }
+  /* Animated ink border */
+  .reel-border {
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 2;
+  }
+  .reel-border-path {
+    fill: none; stroke: var(--bg);
+    stroke-width: 2; opacity: 0.25;
+    stroke-dasharray: 2000;
+    stroke-dashoffset: 2000;
+  }
+  .reel-overlay {
+    position: absolute; inset: 0; z-index: 3;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(10,10,10,0.28);
+    transition: background 0.5s;
+  }
+  .reel-overlay.hidden { background: rgba(10,10,10,0); }
+  .play-btn {
+    width: 76px; height: 76px; border-radius: 50%;
+    background: var(--bg); border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.3s var(--spring), background 0.3s;
+  }
+  .play-btn:hover { transform: scale(1.14); }
+  .reel-caption {
+    margin-top: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-light);
+    display: flex; align-items: center; gap: 20px;
+    opacity: 0;
+  }
+  .reel-caption::before {
+    content: ''; width: 28px; height: 1px; background: var(--gold);
+  }
+
+  /* Ink smear behind reel */
+  #reel-ink {
+    position: absolute; bottom: -60px; right: -80px;
+    width: 420px; height: 420px;
+    pointer-events: none; z-index: 0; opacity: 0.08;
+  }
+
+  /* ═══════════════════════════════════════════
+     SECTION 4 — PORTFOLIO
+  ═══════════════════════════════════════════ */
+  #portfolio { position: relative; }
+
+  .port-item {
+    position: relative;
+    min-height: 85vh; display: flex;
+    align-items: center;
+    border-top: 1px solid rgba(10,10,10,0.07);
+    overflow: hidden;
+  }
+
+  /* Media */
+  .port-media {
+    position: absolute; top: 0; bottom: 0;
+    left: 0; width: 52%; overflow: hidden;
+  }
+  .port-item:nth-child(even) .port-media { left: auto; right: 0; }
+
+  .port-img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: grayscale(0.15) contrast(1.1);
+    transform: scale(1.06);
+    transition: transform 1.1s var(--ease);
+  }
+  .port-item:hover .port-img { transform: scale(1.0); }
+
+  .port-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to right, transparent 0%, rgba(247,244,239,0.75) 50%, rgba(247,244,239,0.97) 100%);
+  }
+  .port-item:nth-child(even) .port-overlay {
+    background: linear-gradient(to left, transparent 0%, rgba(247,244,239,0.75) 50%, rgba(247,244,239,0.97) 100%);
+  }
+
+  /* Text */
+  .port-text {
+    position: relative; z-index: 10;
+    width: 48%; padding: 80px 7%;
+    margin-left: auto;
+  }
+  .port-item:nth-child(even) .port-text { margin-left: 0; margin-right: auto; }
+
+  .port-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--gold);
+    display: block; margin-bottom: 24px;
+    opacity: 0;
+  }
+  .port-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(52px, 5.8vw, 86px);
+    font-weight: 400; line-height: 0.95;
+    letter-spacing: -0.025em; color: var(--ink);
+    overflow: hidden; margin-bottom: 28px;
+    padding-bottom: 0.18em;
+  }
+  .port-title span { display: block; transform: translateY(110%); white-space: nowrap; }
+  .port-desc {
+    font-size: 16px; line-height: 1.78;
+    color: var(--ink-wash); max-width: 340px;
+    opacity: 0; transform: translateY(12px);
+  }
+  .port-meta {
+    margin-top: 36px;
+    display: flex; gap: 32px;
+    opacity: 0;
+  }
+  .port-meta-col { display: flex; flex-direction: column; gap: 5px; }
+  .meta-k {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-light);
+  }
+  .meta-v { font-size: 14px; color: var(--ink-mid); }
+
+  /* hover arrow CTA */
+  .port-cta {
+    display: inline-flex; align-items: center;
+    gap: 12px; margin-top: 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-mid);
+    cursor: pointer; opacity: 0;
+    transition: color 0.3s;
+  }
+  .port-cta:hover { color: var(--gold); }
+  .port-cta-arrow { width: 20px; height: 1px; background: currentColor; position: relative; transition: width 0.3s; }
+  .port-cta:hover .port-cta-arrow { width: 32px; }
+  .port-cta-arrow::after {
+    content: ''; position: absolute; right: 0; top: -3px;
+    width: 6px; height: 6px; border-right: 1px solid; border-top: 1px solid;
+    border-color: currentColor; transform: rotate(45deg);
+  }
+
+  /* ═══════════════════════════════════════════
+     STRIP SLIDESHOW (portfolio card backgrounds)
+  ═══════════════════════════════════════════ */
+  .strip-container {
+    position: absolute; inset: 0;
+    pointer-events: none;
+  }
+  .port-strip {
+    position: absolute; top: 0; bottom: 0;
+    overflow: hidden;
+  }
+  .port-strip-inner {
+    position: absolute; inset: 0;
+    will-change: transform;
+  }
+  .port-strip-bg {
+    position: absolute; top: 0; bottom: 0;
+    background-size: cover;
+    background-position-y: center;
+    background-repeat: no-repeat;
+    filter: grayscale(1) contrast(1.12);
+  }
+
+  /* ═══════════════════════════════════════════
+     DISCIPLINE DETAIL OVERLAY
+  ═══════════════════════════════════════════ */
+  #port-detail {
+    position: fixed; inset: 0; z-index: 950;
+    background: var(--bg);
+    overflow-y: auto; overflow-x: hidden;
+    overscroll-behavior: contain;
+    opacity: 0; pointer-events: none;
+    transform: translateY(12px);
+    transition: opacity 0.01s, transform 0.01s;
+  }
+  #port-detail.active {
+    opacity: 1; pointer-events: all; transform: translateY(0);
+  }
+  #port-detail-bar {
+    position: sticky; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 6%;
+    background: rgba(247,244,239,0.94);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(10,10,10,0.07);
+    z-index: 10;
+  }
+  #port-back {
+    display: flex; align-items: center; gap: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink-mid); background: none; border: none;
+    cursor: pointer; padding: 0;
+    transition: color 0.3s;
+  }
+  #port-back:hover { color: var(--gold); }
+  .back-arrow { font-size: 15px; transition: transform 0.3s var(--ease); }
+  #port-back:hover .back-arrow { transform: translateX(-5px); }
+  #port-detail-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--gold);
+  }
+
+  /* Project card (web/app) inside detail */
+  .detail-project {
+    min-height: 82vh; display: flex;
+    position: relative; align-items: center;
+    border-bottom: 1px solid rgba(10,10,10,0.06);
+    overflow: hidden;
+  }
+  .detail-media {
+    position: absolute; top: 0; bottom: 0;
+    left: 0; width: 52%; overflow: hidden;
+  }
+  .detail-img {
+    width: 100%; height: 100%; object-fit: cover;
+    object-position: center center;
+    filter: grayscale(0.15) contrast(1.1);
+    transform: scale(1.04);
+    transition: transform 1.1s var(--ease);
+  }
+  .detail-project:hover .detail-img { transform: scale(1.0); }
+  .detail-media-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to right, transparent 0%, rgba(247,244,239,0.7) 55%, rgba(247,244,239,0.97) 100%);
+  }
+
+  /* Logo background variant (transparent PNG on dark stage) */
+  .detail-media--logo { background: #0D1624; }
+  .detail-logo-stage {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .detail-logo-glow {
+    position: absolute;
+    width: 340px; height: 340px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,196,0,0.14) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .detail-logo-img {
+    position: relative; z-index: 1;
+    width: 62%; max-width: 320px;
+    object-fit: contain;
+    user-select: none;
+    filter: drop-shadow(0 8px 40px rgba(255,196,0,0.18));
+  }
+  .detail-media--logo .detail-media-overlay {
+    background: linear-gradient(to right, transparent 0%, rgba(13,22,36,0.3) 40%, rgba(247,244,239,0.92) 75%, rgba(247,244,239,0.99) 100%);
+  }
+  .detail-text {
+    position: relative; z-index: 2;
+    width: 48%; padding: 72px 7%;
+    margin-left: auto;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .detail-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--gold);
+    margin-bottom: 18px;
+  }
+  .detail-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(44px, 5.2vw, 78px);
+    line-height: 1.0; color: var(--ink);
+    margin-bottom: 26px;
+  }
+  .detail-desc {
+    font-size: 16px; line-height: 1.8;
+    color: var(--ink-mid); max-width: 400px;
+    margin-bottom: 36px;
+  }
+  .detail-meta {
+    display: flex; gap: 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .detail-meta-item { display: flex; flex-direction: column; gap: 5px; }
+  .detail-mk { color: var(--ink-light); }
+  .detail-mv { color: var(--ink-mid); }
+
+  /* Visit live site button */
+  .detail-visit-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 36px;
+    padding: 13px 26px;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    text-decoration: none;
+    transition: background 0.28s var(--ease), color 0.28s var(--ease);
+    cursor: none;
+  }
+  .detail-visit-btn:hover { background: var(--gold); color: var(--bg); }
+  .visit-arrow { display: inline-block; transition: transform 0.28s var(--ease); }
+  .detail-visit-btn:hover .visit-arrow { transform: translateX(5px); }
+
+  /* Additional project screenshots strip */
+  .detail-screens {
+    padding: 56px 7% 72px;
+    border-top: 1px solid rgba(10,10,10,0.07);
+  }
+  .detail-screens-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink-light); margin-bottom: 28px;
+  }
+  .detail-screens-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;
+  }
+  .detail-screen-item { display: flex; flex-direction: column; gap: 10px; }
+  .detail-screen-img-wrap {
+    overflow: hidden; border-radius: 3px;
+    border: 1px solid rgba(10,10,10,0.08);
+    aspect-ratio: 16/10;
+  }
+  .detail-screen-img-wrap img {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: grayscale(0.12);
+    transform: scale(1.02);
+    transition: transform 0.7s var(--ease), filter 0.4s ease;
+  }
+  .detail-screen-item:hover .detail-screen-img-wrap img {
+    transform: scale(1.0); filter: grayscale(0);
+  }
+  .detail-screen-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-light);
+  }
+
+  /* Gallery grid (photo/art) inside detail */
+  .detail-gallery { padding: 56px 6% 80px; }
+  .gallery-header { margin-bottom: 48px; }
+  .gallery-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(38px, 4.5vw, 62px);
+    color: var(--ink); margin-bottom: 10px;
+  }
+  .gallery-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--ink-light);
+  }
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 3px;
+  }
+  .gallery-item {
+    position: relative; aspect-ratio: 4/3;
+    overflow: hidden; cursor: pointer;
+  }
+  .gallery-item img {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: grayscale(100%);
+    transform: scale(1.04);
+    transition: transform 0.8s var(--ease), filter 0.6s ease;
+  }
+  .gallery-item:hover img { transform: scale(1.0); filter: grayscale(30%); }
+  .gallery-info {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 20px;
+    background: linear-gradient(to top, rgba(10,10,10,0.72), transparent);
+    opacity: 0; transform: translateY(6px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .gallery-item:hover .gallery-info { opacity: 1; transform: translateY(0); }
+  .gallery-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 18px; color: var(--bg);
+  }
+  .gallery-cat {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--gold);
+    margin-top: 4px;
+  }
+
+  /* ═══════════════════════════════════════════
+     PHOTO LIGHTBOX
+  ═══════════════════════════════════════════ */
+  #photo-lightbox {
+    position: fixed; inset: 0; z-index: 8500;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none; opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  #photo-lightbox.open { pointer-events: all; opacity: 1; }
+  #lightbox-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(10,10,10,0.93);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  #lightbox-close {
+    position: fixed; top: 28px; right: 36px; z-index: 2;
+    background: none; border: 1px solid rgba(247,244,239,0.18);
+    width: 44px; height: 44px; border-radius: 50%;
+    font-size: 22px; line-height: 1; color: var(--bg);
+    cursor: none; opacity: 0.7;
+    transition: opacity 0.25s ease, transform 0.35s var(--spring), border-color 0.25s ease;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #lightbox-close:hover { opacity: 1; transform: rotate(90deg); border-color: rgba(247,244,239,0.55); }
+  #lightbox-stage {
+    position: relative; z-index: 1;
+    width: min(92vw, 1080px);
+    max-height: 94vh;
+    display: flex; flex-direction: column;
+    align-items: flex-start;
+  }
+  #lightbox-img {
+    width: 100%; max-height: 80vh;
+    object-fit: contain;
+    filter: grayscale(100%);
+    transform: scale(0.94);
+    transition: transform 0.55s var(--spring), filter 0.85s ease;
+    border-radius: 2px;
+  }
+  #photo-lightbox.open #lightbox-img {
+    transform: scale(1);
+    filter: grayscale(0%);
+  }
+  #lightbox-caption {
+    padding: 16px 2px 0;
+    display: flex; align-items: baseline; gap: 16px;
+  }
+  #lightbox-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px; color: var(--bg);
+    letter-spacing: -0.01em;
+  }
+  #lightbox-cat {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--gold);
+  }
+
+  /* ═══════════════════════════════════════════
+     SECTION 5 — CONTACT FLOOD
+  ═══════════════════════════════════════════ */
+  #contact {
+    position: relative; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  #contact-flood {
+    position: absolute; inset: 0; z-index: 1;
+    background: var(--ink);
+    clip-path: circle(0% at 50% 50%);
+  }
+  .contact-ink-bg {
+    position: absolute; inset: 0; z-index: 0;
+    pointer-events: none; overflow: hidden;
+  }
+  .contact-particles {
+    position: absolute; inset: 0; z-index: 2;
+    pointer-events: none;
+  }
+  .contact-content {
+    position: relative; z-index: 10;
+    text-align: center; padding: 60px 40px;
+  }
+  .contact-eyebrow {
+    color: rgba(247,244,239,0.4); margin-bottom: 48px;
+    opacity: 0;
+  }
+  .contact-headline {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(44px, 6.2vw, 92px);
+    font-style: italic; color: var(--bg);
+    line-height: 1.08; letter-spacing: -0.025em;
+    margin-bottom: 52px; opacity: 0; transform: translateY(28px);
+  }
+  .contact-email {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px; letter-spacing: 0.1em;
+    color: var(--bg); border-bottom: 1px solid var(--gold);
+    padding-bottom: 5px; opacity: 0;
+    transition: color 0.3s;
+  }
+  .contact-email:hover { color: var(--gold); }
+  .contact-links {
+    display: flex; justify-content: center;
+    gap: 36px; margin-top: 52px; opacity: 0;
+  }
+  .contact-link {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(247,244,239,0.35);
+    transition: color 0.3s;
+  }
+  .contact-link:hover { color: var(--gold); }
+  .contact-copy {
+    margin-top: 72px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(247,244,239,0.18); opacity: 0;
+  }
+
+  /* ═══════════════════════════════════════════
+     LOOP MASK — 墨 kanji ink flood transition
+  ═══════════════════════════════════════════ */
+  #loop-mask {
+    position: fixed; inset: 0; z-index: 9997;
+    background: var(--ink);
+    clip-path: circle(0% at 50% 50%);
+    pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #loop-mask.active { pointer-events: all; }
+  #loop-kanji {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(100px, 16vw, 220px);
+    color: rgba(184,149,106,0.35);
+    line-height: 1; opacity: 0;
+    transform: scale(0.75);
+    user-select: none;
+  }
+  #loop-hint {
+    position: fixed; bottom: 36px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 9990; opacity: 0; pointer-events: none;
+    width: 60px; height: 60px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #loop-hint svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+  }
+  .hint-glyph {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px; color: var(--gold);
+    position: relative; z-index: 1;
+    user-select: none;
+  }
+
+  /* ═══════════════════════════════════════════
+     ACCESSIBILITY
+  ═══════════════════════════════════════════ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  @media (max-width: 768px) {
+    body { cursor: auto; }
+    .cursor, #trail-canvas, .scroll-bar { display: none; }
+    .nav-dots { display: none; }
+    .port-media { position: relative; width: 100%; height: 50vh; }
+    .port-text  { width: 100%; margin-left: 0; padding: 48px 6%; }
+    .port-overlay { background: linear-gradient(to top, rgba(247,244,239,0.95), transparent 40%) !important; }
+    .port-item { flex-direction: column; min-height: auto; }
+    #stats { grid-template-columns: repeat(2,1fr); gap: 32px 0; }
+    #manifesto { flex-direction: column; }
+    #mani-svg { position: relative; left: 0; width: 100%; height: 240px; }
+    .manifesto-content { width: 100%; padding: 32px 6%; }
+  }
+  </style>
+</head>
+<body>
+
+<!-- SVG Filter Defs -->
+<svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true">
+  <defs>
+    <!-- Main ink blob: blur + threshold + displace -->
+    <filter id="f-ink" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="linearRGB">
+      <feTurbulence id="fTurb" type="fractalNoise" baseFrequency="0.038 0.032" numOctaves="5" seed="3" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" id="fDisp" scale="30" xChannelSelector="R" yChannelSelector="G" result="disp"/>
+      <feGaussianBlur in="disp" stdDeviation="19" result="blur"/>
+      <feComponentTransfer in="blur" result="out">
+        <feFuncA type="linear" slope="5.5" intercept="-0.88"/>
+      </feComponentTransfer>
+    </filter>
+    <!-- Soft wash (no threshold) -->
+    <filter id="f-wash" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="linearRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.042 0.035" numOctaves="4" seed="9" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="20" xChannelSelector="R" yChannelSelector="G" result="disp"/>
+      <feGaussianBlur in="disp" stdDeviation="30" result="out"/>
+    </filter>
+    <!-- Drip sharpener -->
+    <filter id="f-drip" x="-10%" y="-5%" width="120%" height="120%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
+      <feComponentTransfer in="b"><feFuncA type="linear" slope="9" intercept="-1.3"/></feComponentTransfer>
+    </filter>
+  </defs>
+</svg>
+
+<!-- GRAIN -->
+<div id="grain" aria-hidden="true"></div>
+
+<!-- PHOTO LIGHTBOX -->
+<div id="photo-lightbox" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div id="lightbox-backdrop"></div>
+  <button id="lightbox-close" aria-label="Close photo viewer">&#215;</button>
+  <div id="lightbox-stage">
+    <img id="lightbox-img" src="" alt=""/>
+    <div id="lightbox-caption">
+      <div id="lightbox-name"></div>
+      <div id="lightbox-cat"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CURSOR -->
+<div class="cursor" id="cursor" aria-hidden="true"></div>
+<div class="cursor-label" id="cursor-label" aria-hidden="true">View</div>
+<canvas id="trail-canvas" aria-hidden="true"></canvas>
+
+<!-- SCROLL PROGRESS -->
+<div class="scroll-bar" id="scroll-bar" aria-hidden="true"></div>
+
+<!-- BRAND -->
+<div class="brand" id="brand" aria-label="VLOOB">VLOOB</div>
+
+<!-- NAV DOTS -->
+<nav class="nav-dots" id="nav-dots" aria-label="Section navigation">
+  <div class="nav-dot active" data-idx="0" title="Hero"       tabindex="0" role="button"></div>
+  <div class="nav-dot"        data-idx="1" title="Manifesto"  tabindex="0" role="button"></div>
+  <div class="nav-dot"        data-idx="2" title="Reel"       tabindex="0" role="button"></div>
+  <div class="nav-dot"        data-idx="3" title="Portfolio"  tabindex="0" role="button"></div>
+  <div class="nav-dot"        data-idx="4" title="Contact"    tabindex="0" role="button"></div>
+</nav>
+
+<!-- INTRO CURTAIN -->
+<div id="curtain" aria-hidden="true">
+  <div class="curtain-kanji" id="c-kanji">墨</div>
+  <div class="curtain-sub"   id="c-sub">Visual Studio · Est. 2024</div>
+</div>
+
+<!-- LOOP MASK -->
+<div id="loop-mask" aria-hidden="true">
+  <span id="loop-kanji">墨</span>
+</div>
+
+<!-- LOOP HINT — progress ring shown when overshooting at bottom -->
+<div id="loop-hint" aria-hidden="true">
+  <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="30" cy="30" r="26" stroke="rgba(184,149,106,0.18)" stroke-width="1.5"/>
+    <circle class="hint-ring" cx="30" cy="30" r="26"
+            stroke="#B8956A" stroke-width="1.5"
+            stroke-dasharray="163.4" stroke-dashoffset="163.4"
+            stroke-linecap="round"
+            transform="rotate(-90 30 30)"/>
+  </svg>
+  <span class="hint-glyph">墨</span>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     HERO
+═══════════════════════════════════════ -->
+<section id="hero" data-section="0">
+
+  <!-- Kanji watermark -->
+  <div class="kanji-mark" aria-hidden="true">墨</div>
+
+  <!-- Main ink blob SVG -->
+  <svg id="hero-svg" viewBox="0 0 700 680" overflow="visible" aria-hidden="true">
+    <!-- Primary mass -->
+    <g id="h-blob" filter="url(#f-ink)">
+      <ellipse cx="430" cy="190" rx="195" ry="165" fill="#0A0A0A" opacity="0.98"/>
+      <ellipse cx="570" cy="125" rx="125" ry="105" fill="#0A0A0A" opacity="0.95"/>
+      <ellipse cx="345" cy="290" rx="168" ry="138" fill="#0A0A0A" opacity="0.92"/>
+      <ellipse cx="505" cy="265" rx="115" ry="92"  fill="#0A0A0A" opacity="0.88"/>
+      <ellipse cx="615" cy="205" rx="82"  ry="68"  fill="#0A0A0A" opacity="0.84"/>
+      <ellipse cx="275" cy="185" rx="95"  ry="78"  fill="#0A0A0A" opacity="0.8"/>
+      <ellipse cx="458" cy="365" rx="84"  ry="105" fill="#0A0A0A" opacity="0.74"/>
+      <ellipse cx="385" cy="405" rx="62"  ry="72"  fill="#0A0A0A" opacity="0.6"/>
+      <!-- Drip overflow (past viewBox) -->
+      <ellipse cx="445" cy="480" rx="36"  ry="52"  fill="#0A0A0A" opacity="0.48"/>
+      <ellipse cx="445" cy="562" rx="23"  ry="36"  fill="#0A0A0A" opacity="0.32"/>
+      <ellipse cx="445" cy="640" rx="13"  ry="21"  fill="#0A0A0A" opacity="0.18"/>
+      <ellipse cx="342" cy="498" rx="29"  ry="42"  fill="#0A0A0A" opacity="0.38"/>
+      <ellipse cx="342" cy="578" rx="17"  ry="25"  fill="#0A0A0A" opacity="0.22"/>
+      <ellipse cx="528" cy="458" rx="21"  ry="33"  fill="#0A0A0A" opacity="0.32"/>
+      <ellipse cx="528" cy="528" rx="12"  ry="18"  fill="#0A0A0A" opacity="0.18"/>
+    </g>
+    <!-- Soft wash halo -->
+    <g id="h-wash" filter="url(#f-wash)" opacity="0.28">
+      <ellipse cx="440" cy="210" rx="260" ry="230" fill="#2C2C2C"/>
+    </g>
+    <!-- Micro scatter dots -->
+    <g id="h-dots" opacity="0">
+      <circle cx="172" cy="108" r="3.2" fill="#0A0A0A" opacity="0.42"/>
+      <circle cx="152" cy="138" r="1.8" fill="#0A0A0A" opacity="0.3"/>
+      <circle cx="198" cy="88"  r="2.4" fill="#0A0A0A" opacity="0.36"/>
+      <circle cx="130" cy="178" r="1.4" fill="#0A0A0A" opacity="0.24"/>
+      <circle cx="215" cy="312" r="2.6" fill="#0A0A0A" opacity="0.28"/>
+      <circle cx="142" cy="288" r="1.9" fill="#0A0A0A" opacity="0.22"/>
+      <circle cx="638" cy="358" r="3.0" fill="#0A0A0A" opacity="0.3"/>
+      <circle cx="660" cy="380" r="1.6" fill="#0A0A0A" opacity="0.22"/>
+      <circle cx="85"  cy="205" r="2.1" fill="#0A0A0A" opacity="0.2"/>
+      <circle cx="68"  cy="248" r="1.3" fill="#0A0A0A" opacity="0.16"/>
+      <circle cx="248" cy="58"  r="1.8" fill="#0A0A0A" opacity="0.18"/>
+    </g>
+    <!-- Scroll-driven drip SVG paths -->
+    <g id="h-drips" filter="url(#f-drip)">
+      <path id="drip1" class="drip-path" d="M442,440 Q440,490 443,560 Q441,620 444,680"
+            stroke="#0A0A0A" stroke-width="2.2" fill="none"
+            stroke-dasharray="300" stroke-dashoffset="300"/>
+      <path id="drip2" class="drip-path" d="M340,460 Q337,510 340,580 Q338,640 341,700"
+            stroke="#0A0A0A" stroke-width="1.6" fill="none" opacity="0.7"
+            stroke-dasharray="300" stroke-dashoffset="300"/>
+      <path id="drip3" class="drip-path" d="M527,430 Q525,475 528,530 Q526,580 529,620"
+            stroke="#0A0A0A" stroke-width="1.2" fill="none" opacity="0.5"
+            stroke-dasharray="300" stroke-dashoffset="300"/>
+    </g>
+  </svg>
+
+  <!-- Hero text -->
+  <div class="hero-content" id="hero-content">
+    <div class="hero-eyebrow" id="hero-ey">
+      <div class="hero-eyebrow-line"></div>
+      <span class="mono">Muhammad Deo Zulhasio · Visual Studio — Est. 2024</span>
+    </div>
+
+    <h1 class="hero-headline" id="hero-h1">
+      <span class="hero-line"><span class="hero-line-inner">Where ink</span></span>
+      <span class="hero-line"><span class="hero-line-inner"><em>finds</em> its</span></span>
+      <span class="hero-line"><span class="hero-line-inner">voice.</span></span>
+    </h1>
+
+    <p class="hero-sub" id="hero-sub">
+      Creative direction · Visual identity · Motion
+    </p>
+  </div>
+
+  <!-- Scroll indicator -->
+  <div class="scroll-ind" id="scroll-ind">
+    <div class="scroll-ind-line">
+      <div class="scroll-ind-dot"></div>
+    </div>
+    <span class="mono">Scroll</span>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════
+     MARQUEE BAND
+═══════════════════════════════════════ -->
+<div id="marquee" aria-hidden="true">
+  <div class="marquee-row">
+    <div class="marquee-track" id="mq1"></div>
+  </div>
+  <div class="marquee-row">
+    <div class="marquee-track rev" id="mq2"></div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     MANIFESTO
+═══════════════════════════════════════ -->
+<section id="manifesto" data-section="1">
+  <!-- Ink SVG bleeding from left -->
+  <svg id="mani-svg" viewBox="0 0 560 900" overflow="visible"
+       preserveAspectRatio="xMinYMid slice" aria-hidden="true">
+    <g id="m-blob" filter="url(#f-ink)">
+      <ellipse cx="90"  cy="270" rx="240" ry="210" fill="#0A0A0A" opacity="0.95"/>
+      <ellipse cx="175" cy="420" rx="205" ry="182" fill="#0A0A0A" opacity="0.9"/>
+      <ellipse cx="55"  cy="460" rx="162" ry="142" fill="#0A0A0A" opacity="0.85"/>
+      <ellipse cx="238" cy="325" rx="142" ry="124" fill="#0A0A0A" opacity="0.8"/>
+      <ellipse cx="78"  cy="600" rx="124" ry="102" fill="#0A0A0A" opacity="0.72"/>
+      <ellipse cx="202" cy="560" rx="102" ry="82"  fill="#0A0A0A" opacity="0.65"/>
+      <ellipse cx="48"  cy="178" rx="104" ry="84"  fill="#0A0A0A" opacity="0.62"/>
+      <ellipse cx="305" cy="505" rx="82"  ry="62"  fill="#0A0A0A" opacity="0.52"/>
+      <!-- Right-edge micro drips -->
+      <ellipse cx="362" cy="348" rx="32" ry="42"  fill="#0A0A0A" opacity="0.34"/>
+      <ellipse cx="382" cy="418" rx="19" ry="25"  fill="#0A0A0A" opacity="0.2"/>
+      <ellipse cx="372" cy="478" rx="11" ry="15"  fill="#0A0A0A" opacity="0.12"/>
+    </g>
+    <!-- SURPRISE: navy-toned wash (different ink color!) -->
+    <g id="m-wash" filter="url(#f-wash)" opacity="0.22">
+      <ellipse cx="115" cy="360" rx="310" ry="268" fill="#0D1929"/>
+    </g>
+  </svg>
+
+  <!-- Faint editorial photo -->
+  <img class="mani-photo"
+       src="https://picsum.photos/seed/vloob-mani/600/500?grayscale"
+       alt="" aria-hidden="true" loading="lazy"/>
+
+  <div class="manifesto-content">
+    <div class="mani-eyebrow" id="mani-ey">
+      <span class="mono">Our Philosophy</span>
+    </div>
+    <div class="mani-divider" id="mani-div"></div>
+    <blockquote class="manifesto-quote" id="mani-q">
+      "The ink knows where to go — our job is to stay out of its way."
+    </blockquote>
+    <p class="manifesto-body" id="mani-body">
+      We are a creative studio that believes in the intelligence of materials.
+      Ink falls. Paint spreads. Form emerges from constraint.
+      We work with these forces — building identities that feel discovered, not designed.
+    </p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════
+     STATS
+═══════════════════════════════════════ -->
+<div id="stats">
+  <div class="stat-col" data-target="4">
+    <div class="stat-num-wrap">
+      <span class="stat-num">0</span>
+    </div>
+    <div class="stat-label">Years of craft</div>
+  </div>
+  <div class="stat-col" data-target="32">
+    <div class="stat-num-wrap">
+      <span class="stat-num">0</span>
+    </div>
+    <div class="stat-label">Projects delivered</div>
+  </div>
+  <div class="stat-col" data-target="30">
+    <div class="stat-num-wrap">
+      <span class="stat-num">0</span>
+    </div>
+    <div class="stat-label">Clients served</div>
+  </div>
+  <div class="stat-col" data-target="4">
+    <div class="stat-num-wrap">
+      <span class="stat-num">0</span>
+    </div>
+    <div class="stat-label">Disciplines</div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     VIDEO REEL
+═══════════════════════════════════════ -->
+<section id="reel" data-section="2">
+  <!-- Ambient ink smear -->
+  <svg id="reel-ink" viewBox="0 0 400 400" overflow="visible" aria-hidden="true">
+    <g filter="url(#f-wash)">
+      <ellipse cx="200" cy="200" rx="200" ry="200" fill="#0A0A0A"/>
+    </g>
+  </svg>
+
+  <div class="reel-header" id="reel-hdr">
+    <div>
+      <span class="mono mono-gold" style="display:block;margin-bottom:12px;">Selected Reel</span>
+      <h2 class="reel-title">Ink in Motion</h2>
+    </div>
+    <span class="mono" style="padding-bottom:8px;">2024</span>
+  </div>
+
+  <div class="reel-frame" id="reel-frame">
+    <video class="reel-video" id="reel-vid"
+           poster="https://placehold.co/1920x1080/0A0A0A/B8956A?text=VLOOB+REEL"
+           muted loop playsinline preload="none">
+      <!-- Drop your .mp4 source here -->
+    </video>
+
+    <!-- Animated ink border -->
+    <svg class="reel-border" viewBox="0 0 1280 720" preserveAspectRatio="none" aria-hidden="true">
+      <rect class="reel-border-path" id="reel-brdr" x="8" y="8" width="1264" height="704" rx="0"/>
+    </svg>
+
+    <div class="reel-overlay" id="reel-ov">
+      <button class="play-btn" id="play-btn" aria-label="Play reel">
+        <svg width="18" height="22" viewBox="0 0 18 22" fill="none">
+          <path d="M1 1L17 11L1 21V1Z" fill="#0A0A0A" stroke="#0A0A0A" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="reel-caption" id="reel-cap">
+    Visual Identity · Motion Design · Art Direction
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════
+     PORTFOLIO
+═══════════════════════════════════════ -->
+<section id="portfolio" data-section="3">
+
+  <!-- WEB DESIGN -->
+  <article class="port-item" id="p1" data-disc="web">
+    <div class="port-media">
+      <img class="port-img" src="https://picsum.photos/seed/vloob-web-disc/900/700?grayscale"
+           alt="Web Design discipline" loading="lazy"/>
+      <div class="port-overlay"></div>
+    </div>
+    <div class="port-text">
+      <span class="port-num">01 / 04</span>
+      <h2 class="port-title"><span>Web Design</span></h2>
+      <p class="port-desc">Digital experiences that inform, engage, and leave a mark. From information architecture to the final pixel.</p>
+      <div class="port-meta">
+        <div class="port-meta-col"><span class="meta-k">Discipline</span><span class="meta-v">01 of 04</span></div>
+        <div class="port-meta-col"><span class="meta-k">Projects</span><span class="meta-v">1 Project</span></div>
+      </div>
+      <div class="port-cta">
+        <span>Explore Work</span>
+        <div class="port-cta-arrow"></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- APP BUILDING -->
+  <article class="port-item" id="p2" data-disc="app">
+    <div class="port-media">
+      <img class="port-img" src="https://picsum.photos/seed/vloob-app-disc/900/700?grayscale"
+           alt="App Building discipline" loading="lazy"/>
+      <div class="port-overlay"></div>
+    </div>
+    <div class="port-text">
+      <span class="port-num">02 / 04</span>
+      <h2 class="port-title"><span>App Building</span></h2>
+      <p class="port-desc">Products built around human behavior — functional, intuitive, and quietly beautiful under the surface.</p>
+      <div class="port-meta">
+        <div class="port-meta-col"><span class="meta-k">Discipline</span><span class="meta-v">02 of 04</span></div>
+        <div class="port-meta-col"><span class="meta-k">Projects</span><span class="meta-v">1 Project</span></div>
+      </div>
+      <div class="port-cta">
+        <span>Explore Work</span>
+        <div class="port-cta-arrow"></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- PHOTOGRAPHY -->
+  <article class="port-item" id="p3" data-disc="photo">
+    <div class="port-media">
+      <img class="port-img" src="https://picsum.photos/seed/vloob-photo-disc/900/700?grayscale"
+           alt="Photography discipline" loading="lazy"/>
+      <div class="port-overlay"></div>
+    </div>
+    <div class="port-text">
+      <span class="port-num">03 / 04</span>
+      <h2 class="port-title"><span>Photography</span></h2>
+      <p class="port-desc">Chasing light, stillness, and the split second that makes a frame timeless.</p>
+      <div class="port-meta">
+        <div class="port-meta-col"><span class="meta-k">Discipline</span><span class="meta-v">03 of 04</span></div>
+        <div class="port-meta-col"><span class="meta-k">Format</span><span class="meta-v">Gallery</span></div>
+      </div>
+      <div class="port-cta">
+        <span>View Gallery</span>
+        <div class="port-cta-arrow"></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- DIGITAL ART -->
+  <article class="port-item" id="p4" data-disc="art">
+    <div class="port-media">
+      <img class="port-img" src="assets/portfolio/Digital_Art/Screenshot_20260528-193258_Instagram.jpg"
+           alt="Digital Art discipline" loading="lazy"/>
+      <div class="port-overlay"></div>
+    </div>
+    <div class="port-text">
+      <span class="port-num">04 / 04</span>
+      <h2 class="port-title"><span>Digital Art</span></h2>
+      <p class="port-desc">A canvas with no rules — where texture, color, and concept collide into something that didn't exist before.</p>
+      <div class="port-meta">
+        <div class="port-meta-col"><span class="meta-k">Discipline</span><span class="meta-v">04 of 04</span></div>
+        <div class="port-meta-col"><span class="meta-k">Format</span><span class="meta-v">Gallery</span></div>
+      </div>
+      <div class="port-cta">
+        <span>View Gallery</span>
+        <div class="port-cta-arrow"></div>
+      </div>
+    </div>
+  </article>
+
+</section>
+
+<!-- DISCIPLINE DETAIL OVERLAY -->
+<div id="port-detail" aria-hidden="true">
+  <div id="port-detail-bar">
+    <button id="port-back">
+      <span class="back-arrow">←</span>
+      <span>All Disciplines</span>
+    </button>
+    <span id="port-detail-label"></span>
+  </div>
+  <div id="port-detail-inner"></div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     CONTACT
+═══════════════════════════════════════ -->
+<section id="contact" data-section="4">
+  <div id="contact-flood" aria-hidden="true"></div>
+  <canvas class="contact-particles" id="ash-canvas" aria-hidden="true"></canvas>
+
+  <div class="contact-content">
+    <p class="mono contact-eyebrow" id="ct-ey">Get In Touch</p>
+    <h2 class="contact-headline" id="ct-h2">
+      Let's make<br><em>something real.</em>
+    </h2>
+    <a href="mailto:deozulhasi00@gmail.com" class="contact-email" id="ct-mail">
+      deozulhasi00@gmail.com
+    </a>
+    <div class="contact-links" id="ct-links">
+      <a href="https://www.instagram.com/deo_zulhasio?igsh=MWJva2U3azh5Z2F1ZQ==" class="contact-link" target="_blank" rel="noopener noreferrer">Instagram</a>
+      <a href="https://www.linkedin.com/in/muhammad-deo-zulhasio-824899409?utm_source=share_via&utm_content=profile&utm_medium=member_android" class="contact-link" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+      <a href="https://www.threads.com/@deo_zulhasio" class="contact-link" target="_blank" rel="noopener noreferrer">Threads</a>
+    </div>
+    <p class="contact-copy" id="ct-copy">© 2024 VLOOB Visual Studio — All rights reserved</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════════════════ -->
+<script>
+/* ═══════════════════════════════════════
+   SETUP
+═══════════════════════════════════════ */
+gsap.registerPlugin(ScrollTrigger);
+
+const $ = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
+
+/* ═══════════════════════════════════════
+   CURSOR SYSTEM
+═══════════════════════════════════════ */
+const curEl = $('cursor');
+const trail = $('trail-canvas');
+const tCtx  = trail.getContext('2d');
+let mx = innerWidth/2, my = innerHeight/2;
+let cx = mx, cy = my;
+
+trail.width  = innerWidth;
+trail.height = innerHeight;
+window.addEventListener('resize', () => {
+  trail.width  = innerWidth;
+  trail.height = innerHeight;
+}, { passive: true });
+
+document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; }, { passive: true });
+document.addEventListener('mousedown', () => curEl.classList.add('down'));
+document.addEventListener('mouseup',   () => curEl.classList.remove('down'));
+
+const curLabel = $('cursor-label');
+
+// Cursor hover states
+$$('a, button, .nav-dot, .port-cta, .play-btn').forEach(el => {
+  el.addEventListener('mouseenter', () => curEl.classList.add('hover'));
+  el.addEventListener('mouseleave', () => curEl.classList.remove('hover'));
+});
+
+// "View" cursor on portfolio items
+$$('.port-item').forEach(item => {
+  item.addEventListener('mouseenter', () => {
+    curEl.classList.add('view');
+    curEl.classList.remove('hover','text');
+    curLabel.classList.add('show');
+  });
+  item.addEventListener('mouseleave', () => {
+    curEl.classList.remove('view');
+    curLabel.classList.remove('show');
+  });
+});
+$$('p, h1, h2, blockquote').forEach(el => {
+  el.addEventListener('mouseenter', () => curEl.classList.add('text'));
+  el.addEventListener('mouseleave', () => curEl.classList.remove('text'));
+});
+
+// Smooth cursor
+(function cursorLoop() {
+  cx += (mx - cx) * 0.11;
+  cy += (my - cy) * 0.11;
+  const t = `translate(${cx}px,${cy}px) translate(-50%,-50%)`;
+  curEl.style.transform       = t;
+  curLabel.style.transform    = t;
+  requestAnimationFrame(cursorLoop);
+})();
+
+/* ═══════════════════════════════════════
+   INK TRAIL
+═══════════════════════════════════════ */
+const drops = [];
+let lx = 0, ly = 0;
+
+document.addEventListener('mousemove', e => {
+  const dx = e.clientX - lx, dy = e.clientY - ly;
+  const speed = Math.sqrt(dx*dx + dy*dy);
+  lx = e.clientX; ly = e.clientY;
+
+  const n = Math.min(Math.floor(speed * 0.1) + 1, 5);
+  for (let i = 0; i < n; i++) {
+    if (Math.random() > 0.5) continue;
+    drops.push({
+      x: e.clientX + (Math.random()-.5)*9,
+      y: e.clientY + (Math.random()-.5)*4,
+      vx: (Math.random()-.5) * 0.5,
+      vy:  Math.random() * 0.3,
+      r:   Math.random() * 2.2 + 0.7,
+      a:   0.22 + Math.random() * 0.18,
+      life: 1,
+      decay: 0.011 + Math.random() * 0.011,
+    });
+  }
+}, { passive: true });
+
+// Click burst
+document.addEventListener('click', e => {
+  for (let i = 0; i < 18; i++) {
+    const ang = (Math.PI*2/18)*i + (Math.random()-.5)*0.5;
+    const spd = 1.2 + Math.random()*5;
+    drops.push({
+      x: e.clientX, y: e.clientY,
+      vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd - 1.8,
+      r: Math.random()*4 + 0.8, a: 0.45 + Math.random()*0.3,
+      life: 1, decay: 0.016 + Math.random()*0.016,
+    });
+  }
+});
+
+(function trailLoop() {
+  tCtx.clearRect(0, 0, trail.width, trail.height);
+  for (let i = drops.length-1; i >= 0; i--) {
+    const d = drops[i];
+    d.x  += d.vx; d.y  += d.vy;
+    d.vy += 0.092; d.vx *= 0.98;
+    d.life -= d.decay;
+    if (d.life <= 0) { drops.splice(i,1); continue; }
+    const asp = 1 + Math.min(Math.abs(d.vy)*0.28, 1.6);
+    tCtx.save();
+    tCtx.globalAlpha = d.life * d.a;
+    tCtx.fillStyle = '#0A0A0A';
+    tCtx.beginPath();
+    tCtx.ellipse(d.x, d.y, d.r, d.r*asp, Math.atan2(d.vy, d.vx+0.001), 0, Math.PI*2);
+    tCtx.fill();
+    tCtx.restore();
+  }
+  requestAnimationFrame(trailLoop);
+})();
+
+/* ═══════════════════════════════════════
+   SCROLL PROGRESS
+═══════════════════════════════════════ */
+const bar = $('scroll-bar');
+window.addEventListener('scroll', () => {
+  const denom = document.body.scrollHeight - innerHeight;
+  bar.style.height = Math.min(window.scrollY / denom * 100, 100) + '%';
+}, { passive: true });
+
+/* ═══════════════════════════════════════
+   NAV DOTS
+═══════════════════════════════════════ */
+const sectionIds = ['hero','manifesto','reel','portfolio','contact'];
+const dots = $$('.nav-dot');
+
+dots.forEach(dot => {
+  dot.addEventListener('click', () => {
+    document.getElementById(sectionIds[+dot.dataset.idx])
+      ?.scrollIntoView({ behavior: 'smooth' });
+  });
+});
+
+function setActiveDot(i) {
+  dots.forEach((d,j) => d.classList.toggle('active', j === i));
+}
+sectionIds.forEach((id, i) => {
+  ScrollTrigger.create({
+    trigger: '#' + id,
+    start: 'top 55%', end: 'bottom 55%',
+    onEnter: () => setActiveDot(i),
+    onEnterBack: () => setActiveDot(i),
+  });
+});
+
+/* ═══════════════════════════════════════
+   MARQUEE — BUILD
+═══════════════════════════════════════ */
+;(function buildMarquee() {
+  const row1 = ['VLOOB', '·', 'Visual Studio', '·', 'Ink & Canvas', '·', 'Est. 2024', '·', 'Tokyo Gallery', '·', 'Editorial Motion', '·', 'Sumi-e', '·'];
+  const row2 = ['Creative Direction', '·', 'Visual Identity', '·', 'Art Direction', '·', 'Motion Design', '·', 'Brand Language', '·', 'Print', '·', 'Digital', '·'];
+
+  const fill = (el, items) => {
+    const all = [...items, ...items]; // doubled for seamless loop
+    all.forEach(t => {
+      const s = document.createElement('span');
+      s.className = 'marquee-item' + (t === '·' ? ' em' : '');
+      s.textContent = t;
+      el.appendChild(s);
+    });
+  };
+  fill($('mq1'), row1);
+  fill($('mq2'), row2);
+})();
+
+/* ═══════════════════════════════════════
+   LIVING INK — turbulence + breathing
+═══════════════════════════════════════ */
+const fTurb = $('fTurb');
+let phase = 0;
+(function inkAlive() {
+  phase += 0.0022;
+  if (fTurb) {
+    const bf  = (0.038 + Math.sin(phase)*0.0058).toFixed(5);
+    const bf2 = (0.032 + Math.cos(phase*0.68)*0.0042).toFixed(5);
+    fTurb.setAttribute('baseFrequency', `${bf} ${bf2}`);
+  }
+  requestAnimationFrame(inkAlive);
+})();
+
+// Breathing scale on ink groups
+gsap.to('#h-blob',  { scale:1.021, transformOrigin:'58% 42%', duration:6.4, repeat:-1, yoyo:true, ease:'sine.inOut' });
+gsap.to('#h-wash',  { scale:1.014, transformOrigin:'44% 56%', duration:8.2, repeat:-1, yoyo:true, ease:'sine.inOut' });
+gsap.to('#m-blob',  { scale:1.018, transformOrigin:'36% 48%', duration:7.6, repeat:-1, yoyo:true, ease:'sine.inOut' });
+gsap.to('#m-wash',  { scale:1.012, transformOrigin:'40% 52%', duration:9.1, repeat:-1, yoyo:true, ease:'sine.inOut' });
+
+/* ═══════════════════════════════════════
+   INTRO CURTAIN
+═══════════════════════════════════════ */
+;(function curtain() {
+  const el    = $('curtain');
+  const kanji = $('c-kanji');
+  const sub   = $('c-sub');
+
+  const tl = gsap.timeline({
+    onComplete() {
+      el.style.display = 'none';
+      startPage();
+    }
+  });
+
+  tl.to(kanji, { opacity:1, scale:1, duration:0.5, ease:'power2.out' }, 0.05)
+    .to(sub,   { opacity:1, duration:0.4, ease:'power2.out' }, 0.35)
+    .to(kanji, { opacity:0, scale:1.25, duration:0.5, ease:'power2.in' }, 1.0)
+    .to(sub,   { opacity:0, duration:0.3 }, 1.0)
+    .to(el,    { opacity:0, duration:0.35, ease:'power1.in' }, 1.3);
+})();
+
+/* ═══════════════════════════════════════
+   PAGE LOAD SEQUENCE
+═══════════════════════════════════════ */
+// Set initial states immediately
+gsap.set('#hero-svg', { opacity:0 });
+gsap.set('.hero-line-inner', { y:'112%' });
+gsap.set(['#hero-ey','#hero-sub','#scroll-ind'], { opacity:0, y:12 });
+gsap.set(['#brand','#nav-dots','#scroll-bar'], { opacity:0 });
+gsap.set('#h-dots', { opacity:0 });
+
+function startPage() {
+  const tl = gsap.timeline({ defaults: { ease: 'cubic-bezier(0.25,0.46,0.45,0.94)' }});
+
+  tl.to('#brand',     { opacity:1, duration:0.6 }, 0)
+    .to('#nav-dots',  { opacity:1, duration:0.6 }, 0.15)
+    .to('#scroll-bar',{ opacity:1, duration:0.5 }, 0.2)
+    .to('#hero-svg',  { opacity:1, duration:1.3 }, 0)
+    .to('#h-dots',    { opacity:1, duration:0.8 }, 0.8)
+    .to('#hero-ey',   { opacity:1, y:0, duration:0.7 }, 0.2)
+    .to('.hero-line-inner', { y:0, duration:1.15, stagger:0.11 }, 0.35)
+    .to('#hero-sub',  { opacity:1, y:0, duration:0.7 }, 1.05)
+    .to('#scroll-ind',{ opacity:1, y:0, duration:0.5 }, 1.45);
+}
+
+/* ═══════════════════════════════════════
+   SCROLL-DRIVEN DRIPS (hero)
+═══════════════════════════════════════ */
+['drip1','drip2','drip3'].forEach((id, i) => {
+  gsap.to('#'+id, {
+    strokeDashoffset: 0,
+    ease: 'none',
+    scrollTrigger: {
+      trigger: '#hero', start: 'top top',
+      end: 'bottom top', scrub: 1.2 + i * 0.3,
+    }
+  });
+});
+
+// Hero ink parallax
+gsap.to('#hero-svg', {
+  y: -130, ease: 'none',
+  scrollTrigger: {
+    trigger: '#hero', start: 'top top',
+    end: 'bottom top', scrub: 1.0,
+  }
+});
+
+/* ═══════════════════════════════════════
+   MANIFESTO SCROLL ANIMATIONS
+═══════════════════════════════════════ */
+gsap.set(['#mani-svg','#mani-ey','#mani-div','#mani-body'], { opacity:0 });
+gsap.set('#mani-svg', { x:-90 });
+gsap.set('#mani-ey',  { y:10 });
+gsap.set('#mani-body',{ y:14 });
+
+ScrollTrigger.create({
+  trigger: '#manifesto', start: 'top 68%',
+  once: true,
+  onEnter() {
+    // Ink bleeds in from left
+    gsap.to('#mani-svg', { x:0, opacity:1, duration:1.5, ease:'cubic-bezier(0.25,0.46,0.45,0.94)' });
+    gsap.to('#mani-ey',  { opacity:1, y:0, duration:0.7, delay:0.4 });
+    gsap.to('#mani-div', { opacity:1, width:'48px', duration:0.7, delay:0.65, ease:'power2.out' });
+
+    // Quote: word-by-word
+    const q = $('mani-q');
+    const txt = q.textContent;
+    q.innerHTML = '';
+    txt.split(' ').forEach((w, i) => {
+      const sp = document.createElement('span');
+      sp.className = 'q-word';
+      sp.textContent = w + ' ';
+      q.appendChild(sp);
+      gsap.to(sp, { opacity:1, y:0, duration:0.5, delay: 0.65 + i*0.055, ease:'power2.out' });
+    });
+
+    gsap.to('#mani-body', { opacity:1, y:0, duration:0.9, delay:1.9 });
+  }
+});
+
+/* ═══════════════════════════════════════
+   STATS COUNTER
+═══════════════════════════════════════ */
+$$('.stat-col').forEach((col, i) => {
+  const numEl  = col.querySelector('.stat-num');
+  const target = +col.dataset.target;
+
+  gsap.set(col, { opacity:0, y:24 });
+
+  ScrollTrigger.create({
+    trigger: '#stats', start: 'top 78%',
+    once: true,
+    onEnter() {
+      gsap.to(col, { opacity:1, y:0, duration:0.7, delay:i*0.1, ease:'power2.out' });
+      gsap.to({ v:0 }, {
+        v: target,
+        duration: 2.2, ease: 'power3.out',
+        delay: i * 0.1 + 0.2,
+        onUpdate() { numEl.textContent = Math.round(this.targets()[0].v); }
+      });
+    }
+  });
+});
+
+/* ═══════════════════════════════════════
+   REEL SCROLL ANIMATIONS
+═══════════════════════════════════════ */
+gsap.set(['#reel-hdr','#reel-frame','#reel-cap'], { opacity:0 });
+gsap.set(['#reel-hdr','#reel-frame'], { y:28 });
+
+ScrollTrigger.create({
+  trigger: '#reel', start: 'top 72%',
+  once: true,
+  onEnter() {
+    gsap.to('#reel-hdr',  { opacity:1, y:0, duration:0.8, ease:'power2.out' });
+    gsap.to('#reel-frame',{ opacity:1, y:0, duration:1.0, delay:0.15, ease:'power2.out' });
+    gsap.to('#reel-cap',  { opacity:1, duration:0.7, delay:0.55 });
+    // Animate ink border path
+    gsap.to('#reel-brdr', { strokeDashoffset:0, duration:2.2, delay:0.4, ease:'power2.inOut' });
+  }
+});
+
+// Reel play/pause
+const reelVid = $('reel-vid');
+const reelOv  = $('reel-ov');
+$('play-btn').addEventListener('click', () => {
+  if (reelVid.paused) {
+    reelVid.play();
+    gsap.to(reelOv, { opacity:0, duration:0.5 });
+    reelOv.classList.add('hidden');
+  } else {
+    reelVid.pause();
+    gsap.to(reelOv, { opacity:1, duration:0.4 });
+    reelOv.classList.remove('hidden');
+  }
+});
+reelVid.addEventListener('click', () => {
+  reelVid.pause();
+  gsap.to(reelOv, { opacity:1, duration:0.4 });
+  reelOv.classList.remove('hidden');
+});
+
+/* ═══════════════════════════════════════
+   PORTFOLIO SCROLL ANIMATIONS
+═══════════════════════════════════════ */
+['p1','p2','p3','p4'].forEach((id, i) => {
+  const item = $(id);
+  const num  = item.querySelector('.port-num');
+  const ttl  = item.querySelector('.port-title span');
+  const desc = item.querySelector('.port-desc');
+  const meta = item.querySelector('.port-meta');
+  const cta  = item.querySelector('.port-cta');
+
+  gsap.set([num, desc, meta, cta], { opacity:0 });
+  gsap.set(ttl, { y:'112%' });
+  gsap.set(desc, { y:12 });
+
+  ScrollTrigger.create({
+    trigger: item, start: 'top 66%',
+    once: true,
+    onEnter() {
+      gsap.to(num,  { opacity:1, duration:0.5 });
+      gsap.to(ttl,  { y:0, duration:1.05, delay:0.12, ease:'cubic-bezier(0.25,0.46,0.45,0.94)' });
+      gsap.to(desc, { opacity:1, y:0, duration:0.75, delay:0.42 });
+      gsap.to(meta, { opacity:1, duration:0.65, delay:0.7 });
+      gsap.to(cta,  { opacity:1, duration:0.5, delay:0.95 });
+    }
+  });
+});
+
+// Portfolio parallax on images
+$$('.port-img').forEach(img => {
+  gsap.to(img, {
+    y: -55, ease:'none',
+    scrollTrigger: {
+      trigger: img.closest('.port-item'),
+      start: 'top bottom', end: 'bottom top',
+      scrub: true,
+    }
+  });
+});
+
+// Magnetic hover on portfolio items
+$$('.port-item').forEach(item => {
+  const txt = item.querySelector('.port-text');
+  item.addEventListener('mousemove', e => {
+    const r  = item.getBoundingClientRect();
+    const rx = (e.clientX - r.left - r.width/2)  / (r.width/2);
+    const ry = (e.clientY - r.top  - r.height/2) / (r.height/2);
+    gsap.to(txt, { x:rx*14, y:ry*9, duration:0.6, ease:'power2.out' });
+  });
+  item.addEventListener('mouseleave', () => {
+    gsap.to(txt, { x:0, y:0, duration:0.9, ease:'elastic.out(1,0.55)' });
+  });
+});
+
+/* ═══════════════════════════════════════
+   TEXT SCRAMBLE (portfolio titles)
+═══════════════════════════════════════ */
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz墨道美';
+
+class Scramble {
+  constructor(el) {
+    this.el   = el;
+    this.orig = el.textContent;
+    this.raf  = null;
+    this.frame = 0;
+    this.queue = [];
+  }
+  start() {
+    const len = this.orig.length;
+    this.queue = this.orig.split('').map((c, i) => ({
+      from: c, to: c,
+      start: Math.floor(Math.random() * 8),
+      end:   Math.floor(Math.random() * 8) + len + i * 1.8 | 0,
+    }));
+    cancelAnimationFrame(this.raf);
+    this.frame = 0;
+    this._tick();
+  }
+  reset() {
+    cancelAnimationFrame(this.raf);
+    this.el.textContent = this.orig;
+  }
+  _tick() {
+    let out = '', done = 0;
+    this.queue.forEach(q => {
+      if (this.frame >= q.end)       { done++; out += q.to; }
+      else if (this.frame >= q.start){ out += CHARS[Math.random()*CHARS.length|0]; }
+      else                           { out += q.from; }
+    });
+    this.el.textContent = out;
+    if (done < this.queue.length) {
+      this.frame++;
+      this.raf = requestAnimationFrame(() => this._tick());
+    }
+  }
+}
+
+$$('.port-title span').forEach(el => {
+  const sc = new Scramble(el);
+  const item = el.closest('.port-item');
+  item.addEventListener('mouseenter', () => sc.start());
+  item.addEventListener('mouseleave', () => sc.reset());
+});
+
+/* ═══════════════════════════════════════
+   CONTACT — INK FLOOD + ASH PARTICLES
+═══════════════════════════════════════ */
+gsap.set(['#ct-ey','#ct-h2','#ct-mail','#ct-links','#ct-copy'], { opacity:0 });
+gsap.set('#ct-h2', { y:28 });
+
+// ASH particles canvas (float upward like embers)
+const ash    = $('ash-canvas');
+const ashCtx = ash.getContext('2d');
+const ashPts = [];
+
+function resizeAsh() {
+  ash.width  = ash.parentElement.offsetWidth;
+  ash.height = ash.parentElement.offsetHeight;
+}
+resizeAsh();
+window.addEventListener('resize', resizeAsh, { passive:true });
+
+(function ashLoop() {
+  if (ash.width && ash.height) {
+    ashCtx.clearRect(0, 0, ash.width, ash.height);
+    // Spawn
+    if (ashPts.length < 60 && Math.random() > 0.65) {
+      ashPts.push({
+        x: Math.random() * ash.width,
+        y: ash.height + 5,
+        r: Math.random() * 2.5 + 0.5,
+        vx: (Math.random()-.5) * 0.4,
+        vy: -(0.3 + Math.random() * 0.8),
+        alpha: 0.1 + Math.random() * 0.25,
+        life: 1,
+        decay: 0.003 + Math.random() * 0.003,
+      });
+    }
+    for (let i = ashPts.length-1; i >= 0; i--) {
+      const p = ashPts[i];
+      p.x  += p.vx + Math.sin(Date.now()*0.001 + i)*0.15;
+      p.y  += p.vy;
+      p.life -= p.decay;
+      if (p.life <= 0 || p.y < -10) { ashPts.splice(i,1); continue; }
+      ashCtx.save();
+      ashCtx.globalAlpha = p.life * p.alpha;
+      ashCtx.fillStyle = 'rgba(247,244,239,0.8)';
+      ashCtx.beginPath();
+      ashCtx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ashCtx.fill();
+      ashCtx.restore();
+    }
+  }
+  requestAnimationFrame(ashLoop);
+})();
+
+ScrollTrigger.create({
+  trigger: '#contact', start: 'top 62%',
+  once: true,
+  onEnter() {
+    const tl = gsap.timeline();
+
+    // Ink circle flood
+    tl.to('#contact-flood', {
+      clipPath: 'circle(160% at 50% 50%)',
+      duration: 1.8, ease: 'power3.in',
+    }, 0)
+    .to('#ct-ey',    { opacity:1, duration:0.5 }, 0.9)
+    .to('#ct-h2',    { opacity:1, y:0, duration:1.0, ease:'power2.out' }, 1.0)
+    .to('#ct-mail',  { opacity:1, duration:0.6 }, 1.5)
+    .to('#ct-links', { opacity:1, duration:0.6 }, 1.75)
+    .to('#ct-copy',  { opacity:1, duration:0.6 }, 2.0);
+  }
+});
+
+/* ═══════════════════════════════════════
+   TIME-AWARE GREETING
+═══════════════════════════════════════ */
+;(function timeGreeting() {
+  const h = new Date().getHours();
+  const g = h < 5 ? 'Late night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const sub = $('hero-sub');
+  if (sub) sub.textContent = `${g} — Creative direction · Visual identity · Motion`;
+})();
+
+/* ═══════════════════════════════════════
+   INFINITE LOOP — 墨 kanji ink flood
+═══════════════════════════════════════ */
+/* ═══════════════════════════════════════
+   STRIP SLIDESHOW
+   Portfolio card backgrounds rotate through
+   images using a shatter-and-reform effect:
+   strips scatter-close in random order,
+   then wave-open left-to-right.
+═══════════════════════════════════════ */
+;(function stripSlideshow() {
+  const N         = 10;     // number of vertical strips
+  const PAUSE     = 3600;   // ms of viewing before next advance
+  const CLOSE_DUR = 0.15;   // seconds per-strip collapse
+  const OPEN_DUR  = 0.19;   // seconds per-strip reveal
+  const CLOSE_STG = 0.038;  // stagger between strips (close phase)
+  const OPEN_STG  = 0.052;  // stagger between strips (open phase)
+  // Total transition ≈ (N-1)*(CLOSE_STG+OPEN_STG) + CLOSE_DUR + OPEN_DUR ≈ 1.45s
+
+  const SLIDES = {
+    web:   [
+      'assets/portfolio/pantau-map.png',
+      'assets/portfolio/pantau-dashboard.png',
+      'assets/portfolio/pantau-hero.png',
+    ],
+    app:   [
+      'assets/portfolio/lifescore-home.jpg',
+      'assets/portfolio/lifescore-timer-active.jpg',
+      'assets/portfolio/lifescore-splash.jpg',
+    ],
+    photo: [
+      'assets/portfolio/Photography/1000203862.jpg',
+      'assets/portfolio/Photography/1000174236.jpg',
+      'assets/portfolio/Photography/1000187542.jpg',
+    ],
+    art:   [
+      'assets/portfolio/Digital_Art/Screenshot_20260528-193258_Instagram.jpg',
+      'assets/portfolio/Digital_Art/Screenshot_20260528-193713_Instagram.jpg',
+      'assets/portfolio/Digital_Art/Screenshot_20260528-193639_Instagram.jpg',
+    ],
+  };
+
+  // Stagger card start times so they never all transition simultaneously
+  const START_OFFSETS = { web: 400, app: 1800, photo: 3200, art: 4600 };
+
+  $$('.port-item[data-disc]').forEach(card => {
+    const disc   = card.dataset.disc;
+    const slides = SLIDES[disc];
+    if (!slides || slides.length < 2) return;
+
+    // Preload all images immediately
+    slides.forEach(src => { const img = new Image(); img.src = src; });
+
+    const media = card.querySelector('.port-media');
+
+    // Remove original static img — strips take over
+    const origImg = media.querySelector('img.port-img');
+    if (origImg) origImg.remove();
+
+    // Build strip container (goes before the overlay)
+    const sc = document.createElement('div');
+    sc.className = 'strip-container';
+    media.insertBefore(sc, media.firstChild);
+
+    let current = 0;
+
+    // Create N strips
+    const strips = Array.from({ length: N }, (_, i) => {
+      const wrap  = document.createElement('div');
+      const inner = document.createElement('div');
+      const bg    = document.createElement('div');
+      wrap.className  = 'port-strip';
+      inner.className = 'port-strip-inner';
+      bg.className    = 'port-strip-bg';
+
+      // Each strip is 1/N wide, positioned at its X offset
+      wrap.style.cssText = `left:${(i/N*100).toFixed(3)}%; width:${(100/N).toFixed(3)}%;`;
+
+      // bg is N× wider than its strip container = full media width
+      // left offset makes it show only this strip's slice of the image
+      bg.style.width              = `${N * 100}%`;
+      bg.style.left               = `${-i * 100}%`;
+      bg.style.backgroundImage    = `url(${slides[0]})`;
+
+      inner.appendChild(bg);
+      wrap.appendChild(inner);
+      sc.appendChild(wrap);
+      return { inner, bg };
+    });
+
+    let busy = false;
+
+    function advance() {
+      if (busy) return;
+      busy = true;
+      const next    = (current + 1) % slides.length;
+      const nextSrc = slides[next];
+
+      // Randomise the strip order for close phase — creates organic scatter
+      const closeOrder = Array.from({ length: N }, (_, i) => i)
+        .sort(() => Math.random() - 0.5);
+
+      const tl = gsap.timeline({
+        onComplete() { current = next; busy = false; }
+      });
+
+      // ── Phase 1: scatter-close (chaos) ──────────────────────
+      closeOrder.forEach((si, ti) => {
+        // Even-indexed strips fold from top, odd from bottom — asymmetric shatter
+        const origin = si % 2 === 0 ? 'center top' : 'center bottom';
+        tl.to(strips[si].inner, {
+          scaleY: 0,
+          transformOrigin: origin,
+          duration: CLOSE_DUR + Math.random() * 0.06,
+          ease: 'power2.in',
+        }, ti * CLOSE_STG);
+      });
+
+      // ── Swap images at the quiet midpoint ──────────────────
+      const swapAt = (N - 1) * CLOSE_STG + CLOSE_DUR + 0.04;
+      tl.add(() => {
+        strips.forEach(s => { s.bg.style.backgroundImage = `url(${nextSrc})`; });
+      }, swapAt);
+
+      // ── Phase 2: wave-open left→right (order, all from top) ─
+      const openStart = swapAt + 0.06;
+      for (let si = 0; si < N; si++) {
+        tl.to(strips[si].inner, {
+          scaleY: 1,
+          transformOrigin: 'center top',
+          duration: OPEN_DUR,
+          ease: 'power3.out',
+        }, openStart + si * OPEN_STG);
+      }
+    }
+
+    // Recursive scheduling — waits for transition to finish + PAUSE before next
+    const totalTransitionMs =
+      ((N - 1) * CLOSE_STG + CLOSE_DUR + 0.1 + (N - 1) * OPEN_STG + OPEN_DUR) * 1000;
+
+    function scheduleNext() {
+      advance();
+      setTimeout(scheduleNext, PAUSE + totalTransitionMs);
+    }
+
+    setTimeout(scheduleNext, START_OFFSETS[disc] ?? 400);
+  });
+})();
+
+/* ═══════════════════════════════════════
+   DISCIPLINE DRILL-DOWN
+═══════════════════════════════════════ */
+;(function disciplineNav() {
+  const detail     = $('port-detail');
+  const detailInner = $('port-detail-inner');
+  const detailLabel = $('port-detail-label');
+  const backBtn    = $('port-back');
+  const mask       = $('loop-mask');
+  const loopKanji  = $('loop-kanji');
+
+  const DATA = {
+    web: {
+      label: 'Web Design',
+      type: 'projects',
+      projects: [{
+        name: 'PantauSehat',
+        tag: 'Web Design · Health Tech · 2024',
+        role: 'Full Design & Art Direction',
+        year: '2024',
+        stack: 'Next.js · Tailwind CSS',
+        url: 'https://pantau-sehat.vercel.app/',
+        desc: 'An independent, real-time disease surveillance platform covering all 38 Indonesian provinces. Built from scratch with VLOOB.teams — a group of recent high school graduates who believed transparent public health data should reach every citizen. Designed for clarity under urgency: editorial calm layered over live outbreak tracking, risk maps, and intelligence reports from WHO and Kemenkes RI.',
+        img: 'assets/portfolio/pantau-map.png',
+        screenshots: [
+          { img: 'assets/portfolio/pantau-hero.png',      label: 'Landing — First Touch' },
+          { img: 'assets/portfolio/pantau-team.png',      label: 'About — VLOOB.teams' },
+          { img: 'assets/portfolio/pantau-dashboard.png', label: 'Surveillance Dashboard' },
+        ],
+      }],
+    },
+    app: {
+      label: 'App Building',
+      type: 'projects',
+      projects: [{
+        name: 'LIFESCORE',
+        tag: 'Mobile App · Productivity · 2025',
+        role: 'Full Design & Development',
+        year: '2025',
+        stack: 'React Native · Expo',
+        desc: 'A gamified habit ecosystem that turns daily discipline into competitive sport. Log study sessions and workouts, earn points scaled by difficulty multipliers, and climb a live global leaderboard in real time. Each session is a match — choose Easy, Normal, or Hard and watch your score reflect the effort you actually put in. Self-improvement has never felt this competitive.',
+        img: 'assets/portfolio/lifescore-home.jpg',
+        imgPosition: 'center 28%',
+        logoBg: 'assets/portfolio/LIFESCORE_logo_transparent.png',
+        url: 'https://play.google.com/store/apps/details?id=app.lifescore',
+        urlLabel: 'View on Play Store',
+        screenshots: [
+          { img: 'assets/portfolio/lifescore-splash.jpg',       label: 'Splash — First Launch' },
+          { img: 'assets/portfolio/lifescore-home.jpg',         label: 'Home — Score & Rank' },
+          { img: 'assets/portfolio/lifescore-timer-idle.jpg',   label: 'Study Timer — Idle' },
+          { img: 'assets/portfolio/lifescore-timer-active.jpg', label: 'Study Timer — Active' },
+        ],
+      }],
+    },
+    photo: {
+      label: 'Photography',
+      sub: 'A selection of captured moments — light, composition, and the decisive instant.',
+      type: 'gallery',
+      items: [
+        { name: 'Transit, Golden Hour',          cat: 'Street',        img: 'assets/portfolio/Photography/1000080909.jpg' },
+        { name: 'Dawn Court',                    cat: 'Landscape',     img: 'assets/portfolio/Photography/1000085643.jpg' },
+        { name: 'Solitary',                      cat: 'Landscape',     img: 'assets/portfolio/Photography/1000103158 (1) (1).jpg' },
+        { name: 'Standing Rain',                 cat: 'Portrait',      img: 'assets/portfolio/Photography/1000121405.jpg' },
+        { name: 'Into the Canopy',               cat: 'Nature',        img: 'assets/portfolio/Photography/1000173938.jpg' },
+        { name: 'Still Water, Gathering Storm',  cat: 'Landscape',     img: 'assets/portfolio/Photography/1000174236.jpg' },
+        { name: 'Electric Dusk',                 cat: 'Sky',           img: 'assets/portfolio/Photography/1000184092 (2).jpg' },
+        { name: 'The Road Before Dawn',          cat: 'Street',        img: 'assets/portfolio/Photography/1000187518.jpg' },
+        { name: 'Corner Store, Midnight',        cat: 'Street',        img: 'assets/portfolio/Photography/1000187542.jpg' },
+        { name: 'Eight Legs, Still',             cat: 'Macro',         img: 'assets/portfolio/Photography/1000191558.jpg' },
+        { name: 'Bloom, Contained',              cat: 'Nature',        img: 'assets/portfolio/Photography/1000191614.jpg' },
+        { name: 'Harbour Before Rain',           cat: 'Landscape',     img: 'assets/portfolio/Photography/1000197909.jpg' },
+        { name: 'Vessel at Anchor',              cat: 'Maritime',      img: 'assets/portfolio/Photography/1000198340 (1).jpg' },
+        { name: 'Reaching Skyward',              cat: 'Street',        img: 'assets/portfolio/Photography/1000200653.jpg' },
+        { name: 'Iron Spiral, Bronze Horses',    cat: 'Architecture',  img: 'assets/portfolio/Photography/1000202105.jpg' },
+        { name: 'Port Ablaze',                   cat: 'Maritime',      img: 'assets/portfolio/Photography/1000203808 (1).jpg' },
+        { name: 'Neon Arch',                     cat: 'Night',         img: 'assets/portfolio/Photography/1000203862.jpg' },
+        { name: 'Sanctuary in Rain',             cat: 'Architecture',  img: 'assets/portfolio/Photography/1000210355.jpg' },
+        { name: 'The Sermon',                    cat: 'Documentary',   img: 'assets/portfolio/Photography/1000210426.jpg' },
+        { name: 'Race Louder, I',                cat: 'Motorsport',    img: 'assets/portfolio/Photography/1000226753.jpg' },
+        { name: 'Race Louder, II',               cat: 'Motorsport',    img: 'assets/portfolio/Photography/1000226756.jpg' },
+        { name: 'Race Louder, III',              cat: 'Motorsport',    img: 'assets/portfolio/Photography/1000226765.jpg' },
+        { name: 'After Midnight',                cat: 'Street',        img: 'assets/portfolio/Photography/1000241931.jpg' },
+        { name: 'No. 1',                         cat: 'Street',        img: 'assets/portfolio/Photography/1000243121.jpg' },
+        { name: 'Temple at Dusk',                cat: 'Landscape',     img: 'assets/portfolio/Photography/1000247848.jpg' },
+        { name: 'The Gallery',                   cat: 'Interior',      img: 'assets/portfolio/Photography/1000249834.jpg' },
+        { name: 'Very Delicious Ramen',          cat: 'Interior',      img: 'assets/portfolio/Photography/1000249910.jpg' },
+        { name: 'Last Train',                    cat: 'Street',        img: 'assets/portfolio/Photography/1000258386.jpg' },
+        { name: 'Mirror Lake',                   cat: 'Landscape',     img: 'assets/portfolio/Photography/1000261356.jpg' },
+        { name: 'Fire Tender',                   cat: 'Portrait',      img: 'assets/portfolio/Photography/1000276999.jpeg' },
+        { name: 'Veiled Moon',                   cat: 'Sky',           img: 'assets/portfolio/Photography/1000278775.jpeg' },
+        { name: 'Dinner on the River',           cat: 'Night',         img: 'assets/portfolio/Photography/DSC09538.JPG' },
+        { name: 'City on the Water',             cat: 'Night',         img: 'assets/portfolio/Photography/DSC09543.JPG' },
+        { name: 'Pagoda, Night I',               cat: 'Architecture',  img: 'assets/portfolio/Photography/DSC09553.jpg' },
+        { name: 'Pagoda, Night II',              cat: 'Architecture',  img: 'assets/portfolio/Photography/DSC09563.jpg' },
+        { name: 'Gate of the Dragon',            cat: 'Architecture',  img: 'assets/portfolio/Photography/DSC09576.JPG' },
+        { name: 'Steel and Light',               cat: 'Architecture',  img: 'assets/portfolio/Photography/DSC09614.JPG' },
+        { name: 'Prism',                         cat: 'Portrait',      img: 'assets/portfolio/Photography/IMG_20221017_184118.jpg' },
+        { name: 'Afternoon Rest',                cat: 'Portrait',      img: 'assets/portfolio/Photography/IMG_20221022_191437.jpg' },
+      ],
+    },
+    art: {
+      label: 'Digital Art',
+      sub: 'A canvas with no rules — where texture, color, and concept collide.',
+      type: 'gallery',
+      items: [
+        { name: 'The Fall',                  cat: 'Brand Art',        img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193234_Instagram.jpg' },
+        { name: 'Beneath the Crimson Moon',  cat: 'Illustration',     img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193258_Instagram.jpg' },
+        { name: 'Blade & Dragon',            cat: 'Illustration',     img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193336_Instagram.jpg' },
+        { name: 'The Howl',                  cat: 'Creature Art',     img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193417_Instagram.jpg' },
+        { name: 'Blood & Grace',             cat: 'Fan Art',          img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193639_Instagram.jpg' },
+        { name: 'Iron & Roses',              cat: 'Illustration',     img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193713_Instagram.jpg' },
+        { name: "The Jester's Hand",         cat: 'Fan Art',          img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193730_Instagram.jpg' },
+        { name: 'Thorn & Chain',             cat: 'Digital Art',      img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193750_Instagram.jpg' },
+        { name: 'Dead Reckoning',            cat: 'Illustration',     img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193813_Instagram.jpg' },
+        { name: 'Unchained',                 cat: 'Brand Art',        img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193931_Instagram.jpg' },
+        { name: 'Ink Form',                  cat: 'Concept Art',      img: 'assets/portfolio/Digital_Art/Screenshot_20260528-193952_Instagram.jpg' },
+        { name: 'Stop Sebentar',             cat: 'Graphic Design',   img: 'assets/portfolio/Digital_Art/1_20260528_194339_0000.png' },
+        { name: 'Wait a Moment',             cat: 'Graphic Design',   img: 'assets/portfolio/Digital_Art/2_20260528_194339_0001.png' },
+        { name: "The Craftsman's Mark",      cat: 'Logo Design',      img: 'assets/portfolio/Digital_Art/Beige and Black Classic Carpenter Badge Logo_20260528_194606_0000.png' },
+        { name: 'Honour & Duty',             cat: 'Poster Design',    img: 'assets/portfolio/Digital_Art/Hijau Merah dan Putih Modern Dirgahayu Tentara Nasional Indonesia Instagram_20260528_194310_0000.png' },
+        { name: 'Kaset Pita Studio',         cat: 'Brand Identity',   img: 'assets/portfolio/Digital_Art/Tambahkan judul_20260528_194722_0000.png' },
+        { name: 'VLOOB GameDev',             cat: 'Brand Identity',   img: 'assets/portfolio/Digital_Art/Tambahkan judul_20260528_194722_0001.png' },
+      ],
+    },
+  };
+
+  function buildHTML(disc) {
+    const d = DATA[disc];
+    if (d.type === 'projects') {
+      return d.projects.map(p => `
+        <article class="detail-project">
+          <div class="detail-media${p.logoBg ? ' detail-media--logo' : ''}">
+            ${p.logoBg ? `
+            <div class="detail-logo-stage">
+              <div class="detail-logo-glow"></div>
+              <img class="detail-logo-img" src="${p.logoBg}" alt="${p.name} logo" draggable="false"/>
+            </div>` : `
+            <img class="detail-img" src="${p.img}" alt="${p.name}" loading="lazy"
+                 ${p.imgPosition ? `style="object-position:${p.imgPosition}"` : ''}/>
+            `}
+            <div class="detail-media-overlay"></div>
+          </div>
+          <div class="detail-text">
+            <p class="detail-tag">${p.tag}</p>
+            <h2 class="detail-name">${p.name}</h2>
+            <p class="detail-desc">${p.desc}</p>
+            <div class="detail-meta">
+              <div class="detail-meta-item"><span class="detail-mk">Year</span><span class="detail-mv">${p.year}</span></div>
+              <div class="detail-meta-item"><span class="detail-mk">Role</span><span class="detail-mv">${p.role}</span></div>
+              ${p.stack ? `<div class="detail-meta-item"><span class="detail-mk">Stack</span><span class="detail-mv">${p.stack}</span></div>` : ''}
+            </div>
+            ${p.url ? `<a class="detail-visit-btn" href="${p.url}" target="_blank" rel="noopener noreferrer">${p.urlLabel || 'Visit Live Site'} <span class="visit-arrow">→</span></a>` : ''}
+          </div>
+        </article>
+        ${p.screenshots && p.screenshots.length ? `
+        <div class="detail-screens">
+          <p class="detail-screens-eyebrow">Project Screens</p>
+          <div class="detail-screens-grid">
+            ${p.screenshots.map(s => `
+              <div class="detail-screen-item">
+                <div class="detail-screen-img-wrap">
+                  <img src="${s.img}" alt="${s.label}" loading="lazy"/>
+                </div>
+                <div class="detail-screen-label">${s.label}</div>
+              </div>`).join('')}
+          </div>
+        </div>` : ''}`).join('');
+    }
+    return `<div class="detail-gallery">
+      <div class="gallery-header">
+        <h2 class="gallery-title">${d.label}</h2>
+        <p class="gallery-sub">${d.sub}</p>
+      </div>
+      <div class="gallery-grid">
+        ${d.items.map(item => `
+          <div class="gallery-item">
+            <img src="${item.img}" alt="${item.name}" loading="lazy"/>
+            <div class="gallery-info">
+              <div class="gallery-name">${item.name}</div>
+              <div class="gallery-cat">${item.cat}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  function attachDetailParallax() {
+    // Project cards: text floats closer (more shift), image is deeper layer (less shift)
+    detailInner.querySelectorAll('.detail-project').forEach(card => {
+      const img  = card.querySelector('.detail-img');
+      const text = card.querySelector('.detail-text');
+      gsap.set(img, { scale: 1.04 }); // take over from CSS so scale is preserved with x/y
+      card.addEventListener('mousemove', e => {
+        const r  = card.getBoundingClientRect();
+        const rx = (e.clientX - r.left - r.width/2)  / (r.width/2);
+        const ry = (e.clientY - r.top  - r.height/2) / (r.height/2);
+        gsap.to(img,  { x: rx*6,  y: ry*4,  duration:0.9, ease:'power2.out' });
+        gsap.to(text, { x: rx*14, y: ry*9,  duration:0.6, ease:'power2.out' });
+      });
+      card.addEventListener('mouseleave', () => {
+        gsap.to(img,  { x:0, y:0, duration:1.1, ease:'elastic.out(1,0.45)' });
+        gsap.to(text, { x:0, y:0, duration:0.9, ease:'elastic.out(1,0.55)' });
+      });
+    });
+
+    // Gallery: global header parallax on mouse move over the container
+    const galleryEl = detailInner.querySelector('.detail-gallery');
+    if (galleryEl) {
+      const headerTitle = galleryEl.querySelector('.gallery-title');
+      const headerSub   = galleryEl.querySelector('.gallery-sub');
+      detail.addEventListener('mousemove', e => {
+        const rx = (e.clientX / innerWidth  - 0.5);
+        const ry = (e.clientY / innerHeight - 0.5);
+        if (headerTitle) gsap.to(headerTitle, { x: rx*18, y: ry*10, duration:1.0, ease:'power2.out' });
+        if (headerSub)   gsap.to(headerSub,   { x: rx*10, y: ry*6,  duration:1.1, ease:'power2.out' });
+      });
+    }
+
+    // Gallery items: image shifts + gallery-info text shifts more (foreground)
+    detailInner.querySelectorAll('.gallery-item').forEach(item => {
+      const img  = item.querySelector('img');
+      const info = item.querySelector('.gallery-info');
+      gsap.set(img, { scale: 1.04 }); // take over from CSS
+      item.addEventListener('mousemove', e => {
+        const r  = item.getBoundingClientRect();
+        const rx = (e.clientX - r.left - r.width/2)  / (r.width/2);
+        const ry = (e.clientY - r.top  - r.height/2) / (r.height/2);
+        gsap.to(img,  { x: rx*10, y: ry*8,  duration:0.8, ease:'power2.out' });
+        if (info) gsap.to(info, { x: rx*16, y: ry*10, duration:0.55, ease:'power2.out' });
+      });
+      item.addEventListener('mouseleave', () => {
+        gsap.to(img, { x:0, y:0, duration:1.0, ease:'elastic.out(1,0.55)' });
+        if (info) gsap.to(info, { x:0, y:0, duration:0.9, ease:'elastic.out(1,0.55)' });
+      });
+      item.addEventListener('click', () => {
+        const name = info ? info.querySelector('.gallery-name').textContent : '';
+        const cat  = info ? info.querySelector('.gallery-cat').textContent  : '';
+        openLightbox(img.src, name, cat);
+      });
+    });
+  }
+
+  function floodIn(cx, cy, cb) {
+    mask.classList.add('active');
+    gsap.to(mask, { clipPath:`circle(160% at ${cx}% ${cy}%)`, duration:0.4, ease:'power2.in' });
+    gsap.to(loopKanji, { opacity:1, scale:1, duration:0.26, delay:0.08, ease:'power1.out' });
+    setTimeout(cb, 420);
+  }
+
+  function floodOut(cx, cy, cb) {
+    gsap.to(loopKanji, { opacity:0, scale:1.4, duration:0.28, delay:0.08, ease:'power2.in' });
+    gsap.to(mask, {
+      clipPath:`circle(0% at ${cx}% ${cy}%)`,
+      duration:0.48, delay:0.22, ease:'power2.out',
+      onComplete() { mask.classList.remove('active'); gsap.set(loopKanji,{scale:0.75}); cb&&cb(); }
+    });
+  }
+
+  function open(disc, card) {
+    if (detail.classList.contains('active')) return;
+    const r  = card.getBoundingClientRect();
+    const cx = ((r.left + r.width  / 2) / innerWidth  * 100).toFixed(1);
+    const cy = ((r.top  + r.height / 2) / innerHeight * 100).toFixed(1);
+
+    floodIn(cx, cy, () => {
+      detailInner.innerHTML = buildHTML(disc);
+      attachDetailParallax();
+      detailLabel.textContent = DATA[disc].label;
+      detail.scrollTop = 0;
+      detail.setAttribute('aria-hidden', 'false');
+      detail.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      floodOut(cx, cy);
+    });
+  }
+
+  function close() {
+    if (!detail.classList.contains('active')) return;
+    floodIn('50', '50', () => {
+      detail.classList.remove('active');
+      detail.setAttribute('aria-hidden', 'true');
+      detailInner.innerHTML = '';
+      document.body.style.overflow = '';
+      floodOut('50', '50');
+    });
+  }
+
+  $$('.port-item[data-disc]').forEach(card => {
+    card.addEventListener('click', () => open(card.dataset.disc, card));
+  });
+  backBtn.addEventListener('click', close);
+
+  // Trap scroll inside the overlay — stop events reaching the main page
+  detail.addEventListener('wheel',     e => e.stopPropagation(), { passive: true });
+  detail.addEventListener('touchmove', e => e.stopPropagation(), { passive: true });
+})();
+
+;(function inkLoop() {
+  const mask      = $('loop-mask');
+  const loopKanji = $('loop-kanji');
+  const hint      = $('loop-hint');
+  const hintRing  = hint.querySelector('.hint-ring');
+  const CIRC      = 163.4; // 2π × 26
+
+  let busy      = false;
+  let overshoot = 0;
+  let hintVis   = false;
+
+  // ── Normalize wheel delta to px ──
+  function deltaPx(e) {
+    if (e.deltaMode === 1) return e.deltaY * 16;
+    if (e.deltaMode === 2) return e.deltaY * innerHeight;
+    return e.deltaY;
+  }
+
+  function setRing(progress) {
+    hintRing.style.strokeDashoffset = CIRC * (1 - Math.min(progress, 1));
+  }
+
+  function showHint() {
+    if (hintVis) return;
+    hintVis = true;
+    gsap.to(hint, { opacity: 1, duration: 0.3, ease: 'power2.out' });
+  }
+
+  function hideHint() {
+    if (!hintVis) return;
+    hintVis   = false;
+    overshoot = 0;
+    gsap.to(hint, { opacity: 0, duration: 0.2 });
+    setRing(0);
+  }
+
+  function flood(targetY) {
+    if (busy) return;
+    busy = true;
+    hideHint();
+    mask.classList.add('active');
+
+    gsap.to(mask, { clipPath: 'circle(160% at 50% 50%)', duration: 0.42, ease: 'power2.in' });
+    gsap.to(loopKanji, { opacity: 1, scale: 1, duration: 0.28, delay: 0.08, ease: 'power1.out' });
+
+    setTimeout(() => {
+      window.scrollTo(0, targetY);
+      gsap.to(loopKanji, { opacity: 0, scale: 1.4, duration: 0.32, delay: 0.12, ease: 'power2.in' });
+      gsap.to(mask, {
+        clipPath: 'circle(0% at 50% 50%)',
+        duration: 0.52, delay: 0.28, ease: 'power2.out',
+        onComplete() {
+          mask.classList.remove('active');
+          gsap.set(loopKanji, { scale: 0.75 });
+          busy = false;
+        },
+      });
+    }, 440);
+  }
+
+  // ── Wheel handler ──
+  // FIRE_AT: how many px of intentional overshoot before triggering
+  const FIRE_AT = 320;
+  const SHOW_AT = 60;
+
+  window.addEventListener('wheel', (e) => {
+    if (busy || $('port-detail').classList.contains('active')) return;
+    const maxY    = document.body.scrollHeight - innerHeight;
+    const atBot   = window.scrollY >= maxY - 4;
+    const atTop   = window.scrollY <= 4;
+    const px      = deltaPx(e);
+
+    if (atBot && px > 0) {
+      overshoot += px;
+      if (overshoot >= SHOW_AT) { showHint(); setRing(overshoot / FIRE_AT); }
+      if (overshoot >= FIRE_AT) flood(0);
+    } else if (atTop && px < 0) {
+      flood(maxY);
+    } else if (!atBot && overshoot > 0) {
+      hideHint(); // user scrolled back up before completing ring
+    }
+  }, { passive: true });
+
+  // ── Touch: swipe down past bottom → loop, swipe up at top → go to end ──
+  let ty0 = 0;
+  window.addEventListener('touchstart', e => { ty0 = e.touches[0].clientY; }, { passive: true });
+  window.addEventListener('touchend', e => {
+    if (busy) return;
+    const maxY = document.body.scrollHeight - innerHeight;
+    const dy   = e.changedTouches[0].clientY - ty0;
+    if (window.scrollY >= maxY - 4 && dy < -60) flood(0);
+    if (window.scrollY <= 4        && dy >  60) flood(maxY);
+  }, { passive: true });
+})();
+
+/* ═══════════════════════════════════════
+   PHOTO LIGHTBOX
+═══════════════════════════════════════ */
+(function lightbox() {
+  const lb       = document.getElementById('photo-lightbox');
+  const lbImg    = document.getElementById('lightbox-img');
+  const lbName   = document.getElementById('lightbox-name');
+  const lbCat    = document.getElementById('lightbox-cat');
+  const lbClose  = document.getElementById('lightbox-close');
+  const lbBd     = document.getElementById('lightbox-backdrop');
+
+  window.openLightbox = function(src, name, cat) {
+    lbImg.src = src;
+    lbImg.alt = name;
+    lbName.textContent = name;
+    lbCat.textContent  = cat;
+    lb.setAttribute('aria-hidden', 'false');
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  };
+
+  function closeLightbox() {
+    lb.classList.remove('open');
+    lb.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    setTimeout(() => { lbImg.src = ''; }, 450);
+  }
+
+  lbClose.addEventListener('click', closeLightbox);
+  lbBd.addEventListener('click', closeLightbox);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && lb.classList.contains('open')) closeLightbox();
+  });
+})();
+
+</script>
+</body>
+</html>
