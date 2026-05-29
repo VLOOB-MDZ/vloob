@@ -1586,8 +1586,65 @@ document.addEventListener('mousemove', e => {
   }
 }, { passive: true });
 
+// Ink stamp click sound
+function playInkStamp() {
+  const ctx = _getAudioCtx();
+  const now = ctx.currentTime;
+
+  // Low-frequency thud — the stamp body
+  const thud = ctx.createOscillator();
+  const thudGain = ctx.createGain();
+  thud.type = 'sine';
+  thud.frequency.setValueAtTime(120, now);
+  thud.frequency.exponentialRampToValueAtTime(38, now + 0.08);
+  thudGain.gain.setValueAtTime(0.55, now);
+  thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+  thud.connect(thudGain);
+  thudGain.connect(ctx.destination);
+  thud.start(now);
+  thud.stop(now + 0.18);
+
+  // Noise burst — ink spreading on paper texture
+  const bufLen = ctx.sampleRate * 0.06;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1);
+  const noise = ctx.createBufferSource();
+  noise.buffer = buf;
+
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'bandpass';
+  noiseFilter.frequency.value = 280;
+  noiseFilter.Q.value = 0.8;
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.18, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + 0.06);
+
+  // Soft resonant tail — ink soaking into paper
+  const tail = ctx.createOscillator();
+  const tailGain = ctx.createGain();
+  tail.type = 'sine';
+  tail.frequency.setValueAtTime(55, now + 0.02);
+  tail.frequency.exponentialRampToValueAtTime(48, now + 0.35);
+  tailGain.gain.setValueAtTime(0.0, now);
+  tailGain.gain.linearRampToValueAtTime(0.12, now + 0.02);
+  tailGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+  tail.connect(tailGain);
+  tailGain.connect(ctx.destination);
+  tail.start(now);
+  tail.stop(now + 0.35);
+}
+
 // Click burst
 document.addEventListener('click', e => {
+  playInkStamp();
   for (let i = 0; i < 18; i++) {
     const ang = (Math.PI*2/18)*i + (Math.random()-.5)*0.5;
     const spd = 1.2 + Math.random()*5;
