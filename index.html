@@ -1946,7 +1946,7 @@ class ScrambleSound {
     /* Master gain — slow ink-like fade in */
     this._master = ctx.createGain();
     this._master.gain.setValueAtTime(0, now);
-    this._master.gain.linearRampToValueAtTime(0.10, now + 0.10);
+    this._master.gain.linearRampToValueAtTime(0.32, now + 0.06);
 
     /* Short reverb — delay loop gives the sound space without muddiness */
     this._delay  = ctx.createDelay(0.6);
@@ -1959,12 +1959,12 @@ class ScrambleSound {
     this._master.connect(this._delay);
     this._master.connect(ctx.destination);
 
-    /* Three sine oscillators — open perfect-fifth chord (A2 · E3 · A3)
-       Sine is breath-soft; the fifth interval reads as calm and spacious */
+    /* Three sine oscillators — open perfect-fifth chord (A3 · E4 · A4)
+       Shifted up an octave so it cuts through on laptop speakers */
     const voices = [
-      { freq: 110, gain: 0.55 },   // A2 — low root, felt more than heard
-      { freq: 165, gain: 0.32 },   // E3 — perfect fifth
-      { freq: 220, gain: 0.18 },   // A3 — octave, gives the tone presence
+      { freq: 220, gain: 0.55 },   // A3 — warm root
+      { freq: 330, gain: 0.35 },   // E4 — perfect fifth
+      { freq: 440, gain: 0.22 },   // A4 — octave shimmer
     ];
     this._oscs = voices.map(({ freq, gain }) => {
       const osc = ctx.createOscillator();
