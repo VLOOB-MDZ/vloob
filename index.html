@@ -1918,13 +1918,111 @@ $$('.port-item').forEach(item => {
 ═══════════════════════════════════════ */
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz墨道美';
 
+/* Lazy shared AudioContext — created on first user gesture */
+const _getAudioCtx = (() => {
+  let ctx = null;
+  return () => {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  };
+})();
+
+class ScrambleSound {
+  constructor() {
+    this._osc  = null;
+    this._lfo  = null;
+    this._lfoG = null;
+    this._noise = null;
+    this._master = null;
+  }
+
+  start() {
+    this._teardown();
+    const ctx = _getAudioCtx();
+    const now = ctx.currentTime;
+
+    /* Master gain — fade in */
+    this._master = ctx.createGain();
+    this._master.gain.setValueAtTime(0, now);
+    this._master.gain.linearRampToValueAtTime(0.07, now + 0.025);
+    this._master.connect(ctx.destination);
+
+    /* Sawtooth carrier — oscilloscope buzz */
+    this._osc = ctx.createOscillator();
+    this._osc.type = 'sawtooth';
+    this._osc.frequency.setValueAtTime(300, now);
+    this._osc.connect(this._master);
+    this._osc.start(now);
+
+    /* Square LFO for FM — creates rapid scan-line chop */
+    this._lfo  = ctx.createOscillator();
+    this._lfo.type = 'square';
+    this._lfo.frequency.setValueAtTime(52, now);
+    this._lfoG = ctx.createGain();
+    this._lfoG.gain.setValueAtTime(190, now);
+    this._lfo.connect(this._lfoG);
+    this._lfoG.connect(this._osc.frequency);
+    this._lfo.start(now);
+
+    /* Band-passed noise layer — analogue static texture */
+    const bufLen  = ctx.sampleRate;
+    const buf     = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const data    = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    this._noise = ctx.createBufferSource();
+    this._noise.buffer = buf;
+    this._noise.loop   = true;
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.setValueAtTime(1400, now);
+    bpf.Q.setValueAtTime(1.2, now);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.035, now);
+    this._noise.connect(bpf);
+    bpf.connect(noiseGain);
+    noiseGain.connect(this._master);
+    this._noise.start(now);
+  }
+
+  /* Called each tick with progress 0→1 as chars settle */
+  modulate(progress) {
+    if (!this._osc) return;
+    const ctx = _getAudioCtx();
+    const now = ctx.currentTime;
+    /* Frequency rises then settles; LFO slows as animation nears end */
+    this._osc.frequency.setTargetAtTime(300 + (1 - progress) * 140, now, 0.02);
+    this._lfo.frequency.setTargetAtTime(52 - progress * 24, now, 0.04);
+  }
+
+  stop(instant = false) {
+    if (!this._master) return;
+    const ctx  = _getAudioCtx();
+    const now  = ctx.currentTime;
+    const fade = instant ? 0.018 : 0.09;
+    this._master.gain.cancelScheduledValues(now);
+    this._master.gain.setValueAtTime(this._master.gain.value, now);
+    this._master.gain.linearRampToValueAtTime(0, now + fade);
+    setTimeout(() => this._teardown(), (fade + 0.06) * 1000);
+  }
+
+  _teardown() {
+    ['_osc','_lfo','_noise'].forEach(k => {
+      try { this[k] && this[k].stop(); } catch (_) {}
+      this[k] = null;
+    });
+    this._lfoG = this._master = null;
+  }
+}
+
 class Scramble {
   constructor(el) {
-    this.el   = el;
-    this.orig = el.textContent;
-    this.raf  = null;
+    this.el    = el;
+    this.orig  = el.textContent;
+    this.raf   = null;
     this.frame = 0;
     this.queue = [];
+    this.sound = new ScrambleSound();
   }
   start() {
     const len = this.orig.length;
@@ -1935,23 +2033,29 @@ class Scramble {
     }));
     cancelAnimationFrame(this.raf);
     this.frame = 0;
+    this.sound.start();
     this._tick();
   }
   reset() {
     cancelAnimationFrame(this.raf);
     this.el.textContent = this.orig;
+    this.sound.stop(true);
   }
   _tick() {
     let out = '', done = 0;
+    const total = this.queue.length;
     this.queue.forEach(q => {
       if (this.frame >= q.end)       { done++; out += q.to; }
       else if (this.frame >= q.start){ out += CHARS[Math.random()*CHARS.length|0]; }
       else                           { out += q.from; }
     });
     this.el.textContent = out;
-    if (done < this.queue.length) {
+    if (done < total) {
+      this.sound.modulate(done / total);
       this.frame++;
       this.raf = requestAnimationFrame(() => this._tick());
+    } else {
+      this.sound.stop();
     }
   }
 }
