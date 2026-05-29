@@ -1930,91 +1930,73 @@ const _getAudioCtx = (() => {
 
 class ScrambleSound {
   constructor() {
-    this._oscs   = [];
-    this._lfo    = null;
-    this._lfoG   = null;
-    this._master = null;
-    this._delay  = null;
+    this._out   = null;   // shared reverb output
+    this._delay = null;
     this._dlGain = null;
+    this._lastT  = 0;
+    this._active = false;
   }
 
   start() {
     this._teardown();
     const ctx = _getAudioCtx();
     const now = ctx.currentTime;
+    this._active = true;
+    this._lastT  = 0;
 
-    /* Master gain — slow ink-like fade in */
-    this._master = ctx.createGain();
-    this._master.gain.setValueAtTime(0, now);
-    this._master.gain.linearRampToValueAtTime(0.32, now + 0.06);
+    /* Shared reverb tail — all blips feed into this */
+    this._out = ctx.createGain();
+    this._out.gain.setValueAtTime(1, now);
+    this._out.connect(ctx.destination);
 
-    /* Short reverb — delay loop gives the sound space without muddiness */
-    this._delay  = ctx.createDelay(0.6);
-    this._delay.delayTime.setValueAtTime(0.22, now);
+    this._delay  = ctx.createDelay(0.5);
+    this._delay.delayTime.setValueAtTime(0.18, now);
     this._dlGain = ctx.createGain();
-    this._dlGain.gain.setValueAtTime(0.28, now);
+    this._dlGain.gain.setValueAtTime(0.22, now);
     this._delay.connect(this._dlGain);
-    this._dlGain.connect(this._delay);   // feedback loop
+    this._dlGain.connect(this._delay);       // feedback
     this._dlGain.connect(ctx.destination);
-    this._master.connect(this._delay);
-    this._master.connect(ctx.destination);
-
-    /* Three sine oscillators — open perfect-fifth chord (A3 · E4 · A4)
-       Shifted up an octave so it cuts through on laptop speakers */
-    const voices = [
-      { freq: 220, gain: 0.55 },   // A3 — warm root
-      { freq: 330, gain: 0.35 },   // E4 — perfect fifth
-      { freq: 440, gain: 0.22 },   // A4 — octave shimmer
-    ];
-    this._oscs = voices.map(({ freq, gain }) => {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(gain, now);
-      osc.connect(g);
-      g.connect(this._master);
-      osc.start(now);
-      return osc;
-    });
-
-    /* Sine LFO — gentle 6 Hz tremolo, mirrors the character jitter
-       without sounding mechanical */
-    this._lfo  = ctx.createOscillator();
-    this._lfo.type = 'sine';
-    this._lfo.frequency.setValueAtTime(6, now);
-    this._lfoG = ctx.createGain();
-    this._lfoG.gain.setValueAtTime(0.032, now);
-    this._lfo.connect(this._lfoG);
-    this._lfoG.connect(this._master.gain);
-    this._lfo.start(now);
+    this._out.connect(this._delay);
   }
 
-  /* Called each tick — tremolo settles as chars lock in */
-  modulate(progress) {
-    if (!this._lfo) return;
+  /* Fire one short blip — called each tick while chars are scrambling.
+     Throttled so it sounds like typing (~14 strikes/sec) not static. */
+  blip(progress) {
+    if (!this._active || !this._out) return;
     const ctx = _getAudioCtx();
     const now = ctx.currentTime;
-    this._lfo.frequency.setTargetAtTime(6 - progress * 3.5, now, 0.08);
-    this._lfoG.gain.setTargetAtTime(0.032 * (1 - progress * 0.6), now, 0.08);
+
+    if (now - this._lastT < 0.068) return;  // ~14 Hz throttle
+    this._lastT = now;
+
+    /* Pitch drifts slightly as animation progresses — starts lower,
+       settles higher as the final character locks in */
+    const freq = 320 + progress * 140;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(0.38, now + 0.007);   // sharp attack
+    env.gain.exponentialRampToValueAtTime(0.001, now + 0.09); // soft decay
+
+    osc.connect(env);
+    env.connect(this._out);
+    osc.start(now);
+    osc.stop(now + 0.10);
   }
 
   stop(instant = false) {
-    if (!this._master) return;
-    const ctx  = _getAudioCtx();
-    const now  = ctx.currentTime;
-    const fade = instant ? 0.06 : 0.32;
-    this._master.gain.cancelScheduledValues(now);
-    this._master.gain.setValueAtTime(this._master.gain.value, now);
-    this._master.gain.linearRampToValueAtTime(0, now + fade);
-    setTimeout(() => this._teardown(), (fade + 0.08) * 1000);
+    this._active = false;
+    /* Let the reverb tail ring out naturally */
+    setTimeout(() => this._teardown(), instant ? 80 : 500);
   }
 
   _teardown() {
-    this._oscs.forEach(o => { try { o.stop(); } catch (_) {} });
-    this._oscs = [];
-    try { this._lfo && this._lfo.stop(); } catch (_) {}
-    this._lfo = this._lfoG = this._master = this._delay = this._dlGain = null;
+    this._out = this._delay = this._dlGain = null;
+    this._active = false;
   }
 }
 
@@ -2054,7 +2036,7 @@ class Scramble {
     });
     this.el.textContent = out;
     if (done < total) {
-      this.sound.modulate(done / total);
+      this.sound.blip(done / total);
       this.frame++;
       this.raf = requestAnimationFrame(() => this._tick());
     } else {
