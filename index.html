@@ -1930,11 +1930,12 @@ const _getAudioCtx = (() => {
 
 class ScrambleSound {
   constructor() {
-    this._osc  = null;
-    this._lfo  = null;
-    this._lfoG = null;
-    this._noise = null;
+    this._oscs   = [];
+    this._lfo    = null;
+    this._lfoG   = null;
     this._master = null;
+    this._delay  = null;
+    this._dlGain = null;
   }
 
   start() {
@@ -1942,76 +1943,78 @@ class ScrambleSound {
     const ctx = _getAudioCtx();
     const now = ctx.currentTime;
 
-    /* Master gain — fade in */
+    /* Master gain — slow ink-like fade in */
     this._master = ctx.createGain();
     this._master.gain.setValueAtTime(0, now);
-    this._master.gain.linearRampToValueAtTime(0.07, now + 0.025);
+    this._master.gain.linearRampToValueAtTime(0.10, now + 0.10);
+
+    /* Short reverb — delay loop gives the sound space without muddiness */
+    this._delay  = ctx.createDelay(0.6);
+    this._delay.delayTime.setValueAtTime(0.22, now);
+    this._dlGain = ctx.createGain();
+    this._dlGain.gain.setValueAtTime(0.28, now);
+    this._delay.connect(this._dlGain);
+    this._dlGain.connect(this._delay);   // feedback loop
+    this._dlGain.connect(ctx.destination);
+    this._master.connect(this._delay);
     this._master.connect(ctx.destination);
 
-    /* Sawtooth carrier — oscilloscope buzz */
-    this._osc = ctx.createOscillator();
-    this._osc.type = 'sawtooth';
-    this._osc.frequency.setValueAtTime(300, now);
-    this._osc.connect(this._master);
-    this._osc.start(now);
+    /* Three sine oscillators — open perfect-fifth chord (A2 · E3 · A3)
+       Sine is breath-soft; the fifth interval reads as calm and spacious */
+    const voices = [
+      { freq: 110, gain: 0.55 },   // A2 — low root, felt more than heard
+      { freq: 165, gain: 0.32 },   // E3 — perfect fifth
+      { freq: 220, gain: 0.18 },   // A3 — octave, gives the tone presence
+    ];
+    this._oscs = voices.map(({ freq, gain }) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, now);
+      osc.connect(g);
+      g.connect(this._master);
+      osc.start(now);
+      return osc;
+    });
 
-    /* Square LFO for FM — creates rapid scan-line chop */
+    /* Sine LFO — gentle 6 Hz tremolo, mirrors the character jitter
+       without sounding mechanical */
     this._lfo  = ctx.createOscillator();
-    this._lfo.type = 'square';
-    this._lfo.frequency.setValueAtTime(52, now);
+    this._lfo.type = 'sine';
+    this._lfo.frequency.setValueAtTime(6, now);
     this._lfoG = ctx.createGain();
-    this._lfoG.gain.setValueAtTime(190, now);
+    this._lfoG.gain.setValueAtTime(0.032, now);
     this._lfo.connect(this._lfoG);
-    this._lfoG.connect(this._osc.frequency);
+    this._lfoG.connect(this._master.gain);
     this._lfo.start(now);
-
-    /* Band-passed noise layer — analogue static texture */
-    const bufLen  = ctx.sampleRate;
-    const buf     = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-    const data    = buf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
-    this._noise = ctx.createBufferSource();
-    this._noise.buffer = buf;
-    this._noise.loop   = true;
-    const bpf = ctx.createBiquadFilter();
-    bpf.type = 'bandpass';
-    bpf.frequency.setValueAtTime(1400, now);
-    bpf.Q.setValueAtTime(1.2, now);
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.035, now);
-    this._noise.connect(bpf);
-    bpf.connect(noiseGain);
-    noiseGain.connect(this._master);
-    this._noise.start(now);
   }
 
-  /* Called each tick with progress 0→1 as chars settle */
+  /* Called each tick — tremolo settles as chars lock in */
   modulate(progress) {
-    if (!this._osc) return;
+    if (!this._lfo) return;
     const ctx = _getAudioCtx();
     const now = ctx.currentTime;
-    /* Frequency rises then settles; LFO slows as animation nears end */
-    this._osc.frequency.setTargetAtTime(300 + (1 - progress) * 140, now, 0.02);
-    this._lfo.frequency.setTargetAtTime(52 - progress * 24, now, 0.04);
+    this._lfo.frequency.setTargetAtTime(6 - progress * 3.5, now, 0.08);
+    this._lfoG.gain.setTargetAtTime(0.032 * (1 - progress * 0.6), now, 0.08);
   }
 
   stop(instant = false) {
     if (!this._master) return;
     const ctx  = _getAudioCtx();
     const now  = ctx.currentTime;
-    const fade = instant ? 0.018 : 0.09;
+    const fade = instant ? 0.06 : 0.32;
     this._master.gain.cancelScheduledValues(now);
     this._master.gain.setValueAtTime(this._master.gain.value, now);
     this._master.gain.linearRampToValueAtTime(0, now + fade);
-    setTimeout(() => this._teardown(), (fade + 0.06) * 1000);
+    setTimeout(() => this._teardown(), (fade + 0.08) * 1000);
   }
 
   _teardown() {
-    ['_osc','_lfo','_noise'].forEach(k => {
-      try { this[k] && this[k].stop(); } catch (_) {}
-      this[k] = null;
-    });
-    this._lfoG = this._master = null;
+    this._oscs.forEach(o => { try { o.stop(); } catch (_) {} });
+    this._oscs = [];
+    try { this._lfo && this._lfo.stop(); } catch (_) {}
+    this._lfo = this._lfoG = this._master = this._delay = this._dlGain = null;
   }
 }
 
